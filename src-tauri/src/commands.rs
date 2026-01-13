@@ -482,7 +482,7 @@ fn get_image_dimensions(_path: &Path) -> (Option<u32>, Option<u32>) {
 impl Page {
     pub fn from_file(file_path: &Path, project_path: &Path) -> Result<Self, String> {
         let content = crate::files::read_file(file_path)?;
-        let doc = crate::markdown::MarkdownDocument::parse(&content)?;
+        let (doc, _) = crate::markdown::MarkdownDocument::parse(&content)?;
 
         let metadata = fs::metadata(file_path)
             .map_err(|e| format!("Failed to get file metadata: {}", e))?;
@@ -524,7 +524,7 @@ impl Page {
 impl Draft {
     pub fn from_file(file_path: &Path, project_path: &Path) -> Result<Self, String> {
         let content = crate::files::read_file(file_path)?;
-        let doc = crate::markdown::MarkdownDocument::parse(&content)?;
+        let (doc, _) = crate::markdown::MarkdownDocument::parse(&content)?;
 
         let metadata = fs::metadata(file_path)
             .map_err(|e| format!("Failed to get file metadata: {}", e))?;

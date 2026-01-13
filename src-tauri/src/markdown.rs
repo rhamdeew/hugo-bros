@@ -31,13 +31,13 @@ pub struct MarkdownDocument {
 }
 
 impl MarkdownDocument {
-    pub fn parse(raw: &str) -> Result<Self, String> {
+    pub fn parse(raw: &str) -> Result<(Self, bool), String> {
         // Check if the document starts with frontmatter delimiter
         if !raw.starts_with("---") {
             // No frontmatter found - create default frontmatter
             let frontmatter = Frontmatter {
                 title: "Untitled Post".to_string(),
-                date: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+                date: "".to_string(), // Empty date - will be filled with file time
                 tags: Vec::new(),
                 categories: Vec::new(),
                 permalink: None,
@@ -48,10 +48,10 @@ impl MarkdownDocument {
                 custom_fields: HashMap::new(),
             };
 
-            return Ok(Self {
+            return Ok((Self {
                 frontmatter,
                 content: raw.to_string(),
-            });
+            }, true)); // true = had no frontmatter
         }
 
         // Find the end of frontmatter
@@ -60,7 +60,7 @@ impl MarkdownDocument {
             // Invalid frontmatter format - treat entire content as markdown
             let frontmatter = Frontmatter {
                 title: "Untitled Post".to_string(),
-                date: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+                date: "".to_string(), // Empty date - will be filled with file time
                 tags: Vec::new(),
                 categories: Vec::new(),
                 permalink: None,
@@ -71,10 +71,10 @@ impl MarkdownDocument {
                 custom_fields: HashMap::new(),
             };
 
-            return Ok(Self {
+            return Ok((Self {
                 frontmatter,
                 content: raw.to_string(),
-            });
+            }, true)); // true = had no frontmatter
         }
 
         // Parse YAML frontmatter
@@ -85,10 +85,10 @@ impl MarkdownDocument {
         // Content is everything after the second ---
         let content = parts[2].trim().to_string();
 
-        Ok(Self {
+        Ok((Self {
             frontmatter,
             content,
-        })
+        }, false)) // false = had frontmatter
     }
 
     pub fn to_string(&self) -> Result<String, String> {
@@ -186,7 +186,7 @@ impl Post {
     pub fn from_file(file_path: &Path, project_path: &Path) -> Result<Self, String> {
         let content = files::read_file(file_path)?;
 
-        let mut doc = MarkdownDocument::parse(&content)?;
+        let (mut doc, had_no_frontmatter) = MarkdownDocument::parse(&content)?;
 
         // Get file metadata
         let metadata = fs::metadata(file_path)
@@ -222,11 +222,13 @@ impl Post {
             }
         }
 
-        // Use file modified time as date if date is current time (indicating it was generated)
-        let file_date = chrono::DateTime::<chrono::Local>::from(
-            metadata.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH)
-        );
-        doc.frontmatter.date = file_date.format("%Y-%m-%d %H:%M:%S").to_string();
+        // Only use file modified time as date if post had no frontmatter or date is empty
+        if had_no_frontmatter || doc.frontmatter.date.is_empty() {
+            let file_date = chrono::DateTime::<chrono::Local>::from(
+                metadata.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH)
+            );
+            doc.frontmatter.date = file_date.format("%Y-%m-%d %H:%M:%S").to_string();
+        }
 
         // Generate ID (relative path from source/_posts/)
         let id = file_path

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import { goto } from '$app/navigation';
   import { ArrowLeft, Save, Settings } from 'lucide-svelte';
   import TipTapEditor from '$lib/components/TipTapEditor.svelte';
   import EditorToolbar from '$lib/components/EditorToolbar.svelte';
@@ -216,10 +217,10 @@
   function goBack() {
     if (saveStatus === 'unsaved') {
       if (confirm('You have unsaved changes. Are you sure you want to leave?')) {
-        window.location.href = '/posts';
+        goto('/posts');
       }
     } else {
-      window.location.href = '/posts';
+      goto('/posts');
     }
   }
 

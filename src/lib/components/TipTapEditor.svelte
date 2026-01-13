@@ -52,6 +52,15 @@
     });
   });
 
+  // Watch for content changes and update the editor
+  $effect(() => {
+    if (editor && content && editor.getHTML() !== content) {
+      // Convert markdown to HTML if needed
+      const htmlContent = markdownToHtml(content);
+      editor.commands.setContent(htmlContent, false);
+    }
+  });
+
   onDestroy(() => {
     if (editor) {
       editor.destroy();
@@ -118,6 +127,42 @@
       .replace(/&quot;/gi, '"')
       .trim();
     return md;
+  }
+
+  function markdownToHtml(markdown: string): string {
+    // Simple Markdown to HTML conversion
+    let html = markdown
+      .replace(/^# (.*$)/gim, '<h1>$1</h1>')
+      .replace(/^## (.*$)/gim, '<h2>$1</h2>')
+      .replace(/^### (.*$)/gim, '<h3>$1</h3>')
+      .replace(/^#### (.*$)/gim, '<h4>$1</h4>')
+      .replace(/^##### (.*$)/gim, '<h5>$1</h5>')
+      .replace(/^###### (.*$)/gim, '<h6>$1</h6>')
+      .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.+?)\*/g, '<em>$1</em>')
+      .replace(/~~(.+?)~~/g, '<s>$1</s>')
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/```([^`]+)```/gs, '<pre><code>$1</code></pre>')
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>')
+      .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" />')
+      .replace(/^\* (.+)$/gim, '<li>$1</li>')
+      .replace(/^- (.+)$/gim, '<li>$1</li>')
+      .replace(/^\d+\. (.+)$/gim, '<li>$1</li>')
+      .replace(/^> (.+)$/gim, '<blockquote>$1</blockquote>')
+      .split('\n\n')
+      .map((para) => {
+        if (!para.match(/^<[h|u|o|l|b|p]/)) {
+          return `<p>${para}</p>`;
+        }
+        return para;
+      })
+      .join('\n');
+
+    // Wrap consecutive list items in ul/ol tags
+    html = html.replace(/(<li>.*<\/li>\n)+/g, (match) => `<ul>${match}</ul>`);
+
+    return html;
   }
 </script>
 
