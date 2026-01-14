@@ -185,8 +185,7 @@ pub fn create_post(project_path: String, title: String) -> Result<Post, String> 
     };
 
     // Create markdown content
-    let frontmatter_yaml = serde_yaml::to_string(&frontmatter)
-        .map_err(|e| format!("Failed to serialize frontmatter: {}", e))?;
+    let frontmatter_yaml = crate::markdown::frontmatter_to_yaml(&frontmatter)?;
 
     let content = format!("---\n{}---\n\n", frontmatter_yaml);
 
@@ -311,8 +310,7 @@ pub fn create_page(project_path: String, title: String) -> Result<Page, String> 
         custom_fields: Default::default(),
     };
 
-    let frontmatter_yaml = serde_yaml::to_string(&frontmatter)
-        .map_err(|e| format!("Failed to serialize frontmatter: {}", e))?;
+    let frontmatter_yaml = crate::markdown::frontmatter_to_yaml(&frontmatter)?;
 
     let content = format!("---\n{}---\n\n", frontmatter_yaml);
 
@@ -404,8 +402,7 @@ pub fn create_draft(project_path: String, title: String) -> Result<Draft, String
         custom_fields: Default::default(),
     };
 
-    let frontmatter_yaml = serde_yaml::to_string(&frontmatter)
-        .map_err(|e| format!("Failed to serialize frontmatter: {}", e))?;
+    let frontmatter_yaml = crate::markdown::frontmatter_to_yaml(&frontmatter)?;
 
     let content = format!("---\n{}---\n\n", frontmatter_yaml);
 

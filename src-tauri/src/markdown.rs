@@ -9,6 +9,25 @@ use std::path::Path;
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Frontmatter {
+  pub title: String,
+  pub date: String,
+  #[serde(default)]
+  pub tags: Vec<String>,
+  #[serde(default)]
+  pub categories: Vec<String>,
+  pub description: Option<String>,
+  pub permalink: Option<String>,
+  pub list_image: Option<String>,
+  pub list_image_alt: Option<String>,
+  pub main_image: Option<String>,
+  pub main_image_alt: Option<String>,
+  #[serde(flatten)]
+  pub custom_fields: HashMap<String, serde_yaml::Value>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "snake_case")]
+struct FrontmatterYaml {
     pub title: String,
     pub date: String,
     #[serde(default)]
@@ -17,12 +36,57 @@ pub struct Frontmatter {
     pub categories: Vec<String>,
     pub description: Option<String>,
     pub permalink: Option<String>,
+    #[serde(alias = "listImage")]
     pub list_image: Option<String>,
+    #[serde(alias = "listImageAlt")]
     pub list_image_alt: Option<String>,
+    #[serde(alias = "mainImage")]
     pub main_image: Option<String>,
+    #[serde(alias = "mainImageAlt")]
     pub main_image_alt: Option<String>,
     #[serde(flatten)]
     pub custom_fields: HashMap<String, serde_yaml::Value>,
+}
+
+impl From<FrontmatterYaml> for Frontmatter {
+    fn from(frontmatter: FrontmatterYaml) -> Self {
+        Self {
+            title: frontmatter.title,
+            date: frontmatter.date,
+            tags: frontmatter.tags,
+            categories: frontmatter.categories,
+            description: frontmatter.description,
+            permalink: frontmatter.permalink,
+            list_image: frontmatter.list_image,
+            list_image_alt: frontmatter.list_image_alt,
+            main_image: frontmatter.main_image,
+            main_image_alt: frontmatter.main_image_alt,
+            custom_fields: frontmatter.custom_fields,
+        }
+    }
+}
+
+impl From<Frontmatter> for FrontmatterYaml {
+    fn from(frontmatter: Frontmatter) -> Self {
+        Self {
+            title: frontmatter.title,
+            date: frontmatter.date,
+            tags: frontmatter.tags,
+            categories: frontmatter.categories,
+            description: frontmatter.description,
+            permalink: frontmatter.permalink,
+            list_image: frontmatter.list_image,
+            list_image_alt: frontmatter.list_image_alt,
+            main_image: frontmatter.main_image,
+            main_image_alt: frontmatter.main_image_alt,
+            custom_fields: frontmatter.custom_fields,
+        }
+    }
+}
+
+pub fn frontmatter_to_yaml(frontmatter: &Frontmatter) -> Result<String, String> {
+    serde_yaml::to_string(&FrontmatterYaml::from(frontmatter.clone()))
+        .map_err(|e| format!("Failed to serialize frontmatter: {}", e))
 }
 
 #[derive(Debug)]
@@ -38,9 +102,9 @@ impl MarkdownDocument {
             let parts: Vec<&str> = raw.splitn(3, "---").collect();
             if parts.len() >= 3 {
                 let frontmatter_str = parts[1].trim();
-                if let Ok(frontmatter) = serde_yaml::from_str::<Frontmatter>(frontmatter_str) {
+                if let Ok(frontmatter) = serde_yaml::from_str::<FrontmatterYaml>(frontmatter_str) {
                     let content = parts[2].trim().to_string();
-                    return Ok((Self { frontmatter, content }, false));
+                    return Ok((Self { frontmatter: frontmatter.into(), content }, false));
                 }
             }
         }
@@ -51,7 +115,7 @@ impl MarkdownDocument {
             let frontmatter_str = &raw[..separator_pos].trim();
             // Check if this looks like YAML frontmatter (contains "title:" or "date:")
             if frontmatter_str.contains("title:") || frontmatter_str.contains("date:") {
-                if let Ok(frontmatter) = serde_yaml::from_str::<Frontmatter>(frontmatter_str) {
+                if let Ok(frontmatter) = serde_yaml::from_str::<FrontmatterYaml>(frontmatter_str) {
                     // Content is everything after the ---
                     let content_start = separator_pos + 4; // "\n---".len()
                     let content = if content_start < raw.len() {
@@ -59,7 +123,7 @@ impl MarkdownDocument {
                     } else {
                         String::new()
                     };
-                    return Ok((Self { frontmatter, content }, false));
+                    return Ok((Self { frontmatter: frontmatter.into(), content }, false));
                 }
             }
         }
@@ -114,8 +178,7 @@ pub struct Page {
 
 impl Page {
     pub fn to_markdown(&self) -> Result<String, String> {
-        let frontmatter_yaml = serde_yaml::to_string(&self.frontmatter)
-            .map_err(|e| format!("Failed to serialize frontmatter: {}", e))?;
+        let frontmatter_yaml = frontmatter_to_yaml(&self.frontmatter)?;
 
         Ok(format!("---\n{}---\n\n{}", frontmatter_yaml, self.content))
     }
@@ -135,8 +198,7 @@ pub struct Draft {
 
 impl Draft {
     pub fn to_markdown(&self) -> Result<String, String> {
-        let frontmatter_yaml = serde_yaml::to_string(&self.frontmatter)
-            .map_err(|e| format!("Failed to serialize frontmatter: {}", e))?;
+        let frontmatter_yaml = frontmatter_to_yaml(&self.frontmatter)?;
 
         Ok(format!("---\n{}---\n\n{}", frontmatter_yaml, self.content))
     }
@@ -239,8 +301,7 @@ impl Post {
     }
 
     pub fn to_markdown(&self) -> Result<String, String> {
-        let frontmatter_yaml = serde_yaml::to_string(&self.frontmatter)
-            .map_err(|e| format!("Failed to serialize frontmatter: {}", e))?;
+        let frontmatter_yaml = frontmatter_to_yaml(&self.frontmatter)?;
 
         Ok(format!("---\n{}---\n\n{}", frontmatter_yaml, self.content))
     }
