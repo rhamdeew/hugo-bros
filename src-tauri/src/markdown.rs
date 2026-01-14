@@ -33,73 +33,58 @@ pub struct MarkdownDocument {
 
 impl MarkdownDocument {
     pub fn parse(raw: &str) -> Result<(Self, bool), String> {
-        // Check if the document starts with frontmatter delimiter
-        if !raw.starts_with("---") {
-            // No frontmatter found - create default frontmatter
-            let frontmatter = Frontmatter {
-                title: "Untitled Post".to_string(),
-                date: "".to_string(), // Empty date - will be filled with file time
-                tags: Vec::new(),
-                categories: Vec::new(),
-                description: None,
-                permalink: None,
-                list_image: None,
-                list_image_alt: None,
-                main_image: None,
-                main_image_alt: None,
-                custom_fields: HashMap::new(),
-            };
-
-            return Ok((Self {
-                frontmatter,
-                content: raw.to_string(),
-            }, true)); // true = had no frontmatter
+        // Standard format: ---\nfrontmatter\n---\ncontent
+        if raw.starts_with("---") {
+            let parts: Vec<&str> = raw.splitn(3, "---").collect();
+            if parts.len() >= 3 {
+                let frontmatter_str = parts[1].trim();
+                if let Ok(frontmatter) = serde_yaml::from_str::<Frontmatter>(frontmatter_str) {
+                    let content = parts[2].trim().to_string();
+                    return Ok((Self { frontmatter, content }, false));
+                }
+            }
         }
 
-        // Find the end of frontmatter
-        let parts: Vec<&str> = raw.splitn(3, "---").collect();
-        if parts.len() < 3 {
-            // Invalid frontmatter format - treat entire content as markdown
-            let frontmatter = Frontmatter {
-                title: "Untitled Post".to_string(),
-                date: "".to_string(), // Empty date - will be filled with file time
-                tags: Vec::new(),
-                categories: Vec::new(),
-                description: None,
-                permalink: None,
-                list_image: None,
-                list_image_alt: None,
-                main_image: None,
-                main_image_alt: None,
-                custom_fields: HashMap::new(),
-            };
-
-            return Ok((Self {
-                frontmatter,
-                content: raw.to_string(),
-            }, true)); // true = had no frontmatter
+        // Alternative format: frontmatter\n---\ncontent (without opening ---)
+        // This is used by some Hexo themes
+        if let Some(separator_pos) = raw.find("\n---") {
+            let frontmatter_str = &raw[..separator_pos].trim();
+            // Check if this looks like YAML frontmatter (contains "title:" or "date:")
+            if frontmatter_str.contains("title:") || frontmatter_str.contains("date:") {
+                if let Ok(frontmatter) = serde_yaml::from_str::<Frontmatter>(frontmatter_str) {
+                    // Content is everything after the ---
+                    let content_start = separator_pos + 4; // "\n---".len()
+                    let content = if content_start < raw.len() {
+                        raw[content_start..].trim().to_string()
+                    } else {
+                        String::new()
+                    };
+                    return Ok((Self { frontmatter, content }, false));
+                }
+            }
         }
 
-        // Parse YAML frontmatter
-        let frontmatter_str = parts[1].trim();
-        let frontmatter: Frontmatter = serde_yaml::from_str(frontmatter_str)
-            .map_err(|e| format!("Failed to parse frontmatter: {}", e))?;
-
-        // Content is everything after the second ---
-        let content = parts[2].trim().to_string();
+        // No valid frontmatter found - create default
+        let frontmatter = Frontmatter {
+            title: "Untitled Post".to_string(),
+            date: "".to_string(),
+            tags: Vec::new(),
+            categories: Vec::new(),
+            description: None,
+            permalink: None,
+            list_image: None,
+            list_image_alt: None,
+            main_image: None,
+            main_image_alt: None,
+            custom_fields: HashMap::new(),
+        };
 
         Ok((Self {
             frontmatter,
-            content,
-        }, false)) // false = had frontmatter
+            content: raw.to_string(),
+        }, true))
     }
 
-    pub fn to_string(&self) -> Result<String, String> {
-        let frontmatter_yaml = serde_yaml::to_string(&self.frontmatter)
-            .map_err(|e| format!("Failed to serialize frontmatter: {}", e))?;
-
-        Ok(format!("---\n{}---\n\n{}", frontmatter_yaml, self.content))
-    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

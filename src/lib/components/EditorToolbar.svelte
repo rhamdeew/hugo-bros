@@ -14,12 +14,15 @@
     Link as LinkIcon,
     Image,
     Undo,
-    Redo
+    Redo,
+    Eye
   } from 'lucide-svelte';
 
   export let editor: any;
   export let onLink: () => void = () => {};
   export let onImage: () => void = () => {};
+  export let showPreview: boolean = false;
+  export let onTogglePreview: () => void = () => {};
 
   const headingLevels = [
     { label: 'H1', level: 1, icon: Heading1 },
@@ -82,7 +85,7 @@
     <button
       class="toolbar-btn"
       class:disabled={!canUndo}
-      on:click={undo}
+      onclick={undo}
       title="Undo (Ctrl/Cmd + Z)"
       type="button"
     >
@@ -91,11 +94,26 @@
     <button
       class="toolbar-btn"
       class:disabled={!canRedo}
-      on:click={redo}
+      onclick={redo}
       title="Redo (Ctrl/Cmd + Shift + Z)"
       type="button"
     >
       <Redo size={18} />
+    </button>
+  </div>
+
+  <div class="toolbar-divider"></div>
+
+  <div class="toolbar-group">
+    <!-- Preview Toggle -->
+    <button
+      class="toolbar-btn"
+      class:active={showPreview}
+      onclick={onTogglePreview}
+      title="Toggle Markdown Preview"
+      type="button"
+    >
+      <Eye size={18} />
     </button>
   </div>
 
@@ -107,7 +125,7 @@
       <button
         class="toolbar-btn"
         class:active={isActive('heading', { level })}
-        on:click={() => toggleHeading(level)}
+        onclick={() => toggleHeading(level)}
         title="{label}"
         type="button"
       >
@@ -123,7 +141,7 @@
     <button
       class="toolbar-btn"
       class:active={isActive('bold')}
-      on:click={toggleBold}
+      onclick={toggleBold}
       title="Bold (Ctrl/Cmd + B)"
       type="button"
     >
@@ -132,7 +150,7 @@
     <button
       class="toolbar-btn"
       class:active={isActive('italic')}
-      on:click={toggleItalic}
+      onclick={toggleItalic}
       title="Italic (Ctrl/Cmd + I)"
       type="button"
     >
@@ -141,7 +159,7 @@
     <button
       class="toolbar-btn"
       class:active={isActive('strike')}
-      on:click={toggleStrike}
+      onclick={toggleStrike}
       title="Strikethrough (Ctrl/Cmd + Shift + X)"
       type="button"
     >
@@ -150,7 +168,7 @@
     <button
       class="toolbar-btn"
       class:active={isActive('code')}
-      on:click={toggleCode}
+      onclick={toggleCode}
       title="Inline Code (Ctrl/Cmd + Shift + C)"
       type="button"
     >
@@ -165,7 +183,7 @@
     <button
       class="toolbar-btn"
       class:active={isActive('bulletList')}
-      on:click={toggleBulletList}
+      onclick={toggleBulletList}
       title="Bullet List"
       type="button"
     >
@@ -174,7 +192,7 @@
     <button
       class="toolbar-btn"
       class:active={isActive('orderedList')}
-      on:click={toggleOrderedList}
+      onclick={toggleOrderedList}
       title="Numbered List"
       type="button"
     >
@@ -183,7 +201,7 @@
     <button
       class="toolbar-btn"
       class:active={isActive('blockquote')}
-      on:click={toggleBlockquote}
+      onclick={toggleBlockquote}
       title="Blockquote"
       type="button"
     >
@@ -191,7 +209,7 @@
     </button>
     <button
       class="toolbar-btn"
-      on:click={insertHorizontalRule}
+      onclick={insertHorizontalRule}
       title="Horizontal Rule"
       type="button"
     >
@@ -205,7 +223,7 @@
     <!-- Insert -->
     <button
       class="toolbar-btn"
-      on:click={onLink}
+      onclick={onLink}
       title="Insert Link (Ctrl/Cmd + K)"
       type="button"
     >
@@ -213,7 +231,7 @@
     </button>
     <button
       class="toolbar-btn"
-      on:click={onImage}
+      onclick={onImage}
       title="Insert Image"
       type="button"
     >

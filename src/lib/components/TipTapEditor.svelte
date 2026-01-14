@@ -24,8 +24,10 @@
 
   let editorContainer: HTMLElement;
   let editor: TipTapEditor | null = null;
+  let isUpdatingFromExternal = false;
 
   onMount(() => {
+    const initialHtml = markdownToHtml(content || '');
     editor = new Editor({
       element: editorContainer,
       extensions: [
@@ -38,7 +40,7 @@
         }),
         CharacterCount,
       ],
-      content,
+      content: initialHtml,
       editable,
       editorProps: {
         attributes: {
@@ -46,18 +48,29 @@
         },
       },
       onUpdate: ({ editor: e }) => {
-        content = e.getHTML();
-        onUpdate?.();
+        if (!isUpdatingFromExternal) {
+          onUpdate?.();
+        }
       },
     });
   });
 
-  // Watch for content changes and update the editor
+  // Use $effect to track content changes properly in Svelte 5
   $effect(() => {
-    if (editor && content && editor.getHTML() !== content) {
-      // Convert markdown to HTML if needed
-      const htmlContent = markdownToHtml(content);
-      editor.commands.setContent(htmlContent, false);
+    const contentValue = content;
+    if (editor && contentValue !== undefined) {
+      const htmlContent = markdownToHtml(contentValue || '');
+      const currentHTML = editor.getHTML();
+
+      // Only update if content is actually different
+      if (currentHTML !== htmlContent) {
+        isUpdatingFromExternal = true;
+        editor.commands.setContent(htmlContent, false);
+        // Reset the flag after a brief delay
+        Promise.resolve().then(() => {
+          isUpdatingFromExternal = false;
+        });
+      }
     }
   });
 

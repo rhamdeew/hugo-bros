@@ -1,6 +1,12 @@
 <script lang="ts">
   import { X, Search, Upload as UploadIcon, Trash2, Image as ImageIcon } from 'lucide-svelte';
+  import { convertFileSrc } from '@tauri-apps/api/core';
+  import { backend } from '$lib/services/backend';
   import type { ImageInfo } from '$lib/types';
+
+  interface ImageWithSrc extends ImageInfo {
+    displaySrc: string;
+  }
 
   interface Props {
     open: boolean;
@@ -22,8 +28,30 @@
   let sortBy = $state<'name' | 'date' | 'size'>('date');
   let selectedImage = $state<ImageInfo | null>(null);
 
+  const resolveImageSrc = (image: ImageInfo) => {
+    if (image.fullPath) return convertFileSrc(image.fullPath);
+
+    const projectPath = backend.getProjectPath();
+    if (projectPath) {
+      if (image.path) {
+        return convertFileSrc(`${projectPath}/source/images/${image.path}`);
+      }
+      if (image.url && image.url.startsWith('/')) {
+        return convertFileSrc(`${projectPath}/source${image.url}`);
+      }
+    }
+
+    return image.url || '';
+  };
+
+  // Pre-compute display URLs for all images
+  let imagesWithSrc = $derived(images.map(img => ({
+    ...img,
+    displaySrc: resolveImageSrc(img)
+  })) as ImageWithSrc[]);
+
   // Filter and sort images
-  let filteredImages = $derived(images
+  let filteredImages = $derived(imagesWithSrc
     .filter((img) => {
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
@@ -118,7 +146,7 @@
 
       <!-- Images Grid -->
       <div class="images-grid">
-        {#each filteredImages as image (image.fullPath)}
+        {#each filteredImages as image (image.fullPath || image.path || image.filename)}
           <div
             class="image-card"
             class:selected={selectedImage?.fullPath === image.fullPath}
@@ -134,8 +162,22 @@
             }}
           >
             <div class="image-thumb">
-              {#if image.url}
-                <img src={image.url} alt={image.filename} loading="lazy" />
+              {#if image.displaySrc}
+                <img
+                  src={image.displaySrc}
+                  alt={image.filename}
+                  loading="lazy"
+                  onerror={(e) => {
+                    // Hide broken image and show placeholder
+                    const img = e.target as HTMLImageElement;
+                    img.style.display = 'none';
+                    const placeholder = img.nextElementSibling;
+                    if (placeholder) placeholder.style.display = 'flex';
+                  }}
+                />
+                <div class="no-image error-placeholder" style="display: none;">
+                  <ImageIcon size={32} />
+                </div>
               {:else}
                 <div class="no-image">
                   <ImageIcon size={32} />
@@ -381,6 +423,7 @@
     border-radius: 0.5rem;
     overflow: hidden;
     transition: all 0.15s ease;
+    height: 100px;
   }
 
   .image-card:hover {
@@ -401,11 +444,14 @@
 
   .image-thumb {
     aspect-ratio: 1;
+    min-height: 120px;
+    height: 100px;
     background-color: #f7f7f7;
     display: flex;
     align-items: center;
     justify-content: center;
     overflow: hidden;
+    position: relative;
   }
 
   :global(.dark .image-thumb) {
@@ -413,17 +459,33 @@
   }
 
   .image-thumb img {
-    width: 100%;
     height: 100%;
-    object-fit: cover;
+    width: auto;
+    max-width: 100%;
   }
 
   .no-image {
     color: #d1d5db;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    position: absolute;
+    top: 0;
+    left: 0;
+  }
+
+  .no-image.error-placeholder {
+    background-color: #f7f7f7;
   }
 
   :global(.dark .no-image) {
     color: #525252;
+  }
+
+  :global(.dark .no-image.error-placeholder) {
+    background-color: #404040;
   }
 
   .image-info {

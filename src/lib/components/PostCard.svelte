@@ -1,5 +1,7 @@
 <script lang="ts">
   import { Calendar, Tag, Trash2, Copy } from 'lucide-svelte';
+  import { convertFileSrc } from '@tauri-apps/api/core';
+  import { backend } from '$lib/services/backend';
   import type { Post } from '$lib/types';
 
   interface Props {
@@ -21,21 +23,31 @@
     return text.substring(0, maxLength).trim() + '...';
   };
 
-  const formatDate = (dateString: string) => {
+  const formatDate = (dateInput?: string | number) => {
+    if (!dateInput) return '';
     try {
-      const date = new Date(dateString);
+      const date = typeof dateInput === 'number'
+        ? new Date(dateInput * 1000)
+        : new Date(dateInput);
       return date.toLocaleDateString('en-US', {
         year: 'numeric',
         month: 'short',
         day: 'numeric'
       });
     } catch {
-      return dateString;
+      return typeof dateInput === 'string' ? dateInput : '';
     }
   };
 
+  const resolveImageUrl = (url?: string) => {
+    if (!url) return '';
+    const projectPath = backend.getProjectPath();
+    if (!projectPath || !url.startsWith('/')) return url;
+    return convertFileSrc(`${projectPath}/source${url}`);
+  };
+
   let previewText = $derived(truncateText(post.content.replace(/<[^>]*>/g, ''), 150));
-  let imageUrl = $derived(post.frontmatter.listImage || post.frontmatter.mainImage);
+  let imageUrl = $derived(resolveImageUrl(post.frontmatter.listImage || post.frontmatter.mainImage));
   let displayTags = $derived(post.frontmatter.tags?.slice(0, 3) || []);
 </script>
 
@@ -66,10 +78,10 @@
   <!-- Content -->
   <div class="post-content">
     <h3 class="post-title">{post.title}</h3>
-    <p class="post-date">
-      <Calendar size={14} />
-      {formatDate(post.date)}
-    </p>
+  <p class="post-date">
+    <Calendar size={14} />
+    {formatDate(post.date || post.frontmatter.date || post.modifiedAt)}
+  </p>
     <p class="post-preview">{previewText}</p>
 
     {#if displayTags.length > 0}

@@ -130,6 +130,29 @@ pub fn save_post(_project_path: String, post: Post) -> Result<(), String> {
 }
 
 #[command]
+pub fn get_page(project_path: String, page_id: String) -> Result<Page, String> {
+    let file_path = Path::new(&project_path).join(&page_id);
+
+    if !file_path.exists() {
+        return Err("Page not found".to_string());
+    }
+
+    Page::from_file(&file_path, Path::new(&project_path))
+}
+
+#[command]
+pub fn save_page(_project_path: String, page: Page) -> Result<(), String> {
+    let file_path = Path::new(&page.file_path);
+
+    let markdown = page.to_markdown()?;
+
+    fs::write(file_path, markdown)
+        .map_err(|e| format!("Failed to save page: {}", e))?;
+
+    Ok(())
+}
+
+#[command]
 pub fn create_post(project_path: String, title: String) -> Result<Post, String> {
     let project = HexoProject::new(PathBuf::from(&project_path));
     let posts_dir = project.get_posts_dir();
@@ -176,6 +199,29 @@ pub fn create_post(project_path: String, title: String) -> Result<Post, String> 
 }
 
 #[command]
+pub fn get_draft(project_path: String, draft_id: String) -> Result<Draft, String> {
+    let file_path = Path::new(&project_path).join(&draft_id);
+
+    if !file_path.exists() {
+        return Err("Draft not found".to_string());
+    }
+
+    Draft::from_file(&file_path, Path::new(&project_path))
+}
+
+#[command]
+pub fn save_draft(_project_path: String, draft: Draft) -> Result<(), String> {
+    let file_path = Path::new(&draft.file_path);
+
+    let markdown = draft.to_markdown()?;
+
+    fs::write(file_path, markdown)
+        .map_err(|e| format!("Failed to save draft: {}", e))?;
+
+    Ok(())
+}
+
+#[command]
 pub fn delete_post(project_path: String, post_id: String) -> Result<(), String> {
     let file_path = Path::new(&project_path).join(&post_id);
 
@@ -189,9 +235,92 @@ pub fn delete_post(project_path: String, post_id: String) -> Result<(), String> 
     Ok(())
 }
 
+#[command]
+pub fn delete_page(project_path: String, page_id: String) -> Result<(), String> {
+    let file_path = Path::new(&project_path).join(&page_id);
+
+    if !file_path.exists() {
+        return Err("Page not found".to_string());
+    }
+
+    if let Some(parent) = file_path.parent() {
+        if parent.file_name().and_then(|s| s.to_str()) == Some("source") {
+            return Err("Refusing to delete project source root".to_string());
+        }
+        if parent.ends_with("_posts") || parent.ends_with("_drafts") {
+            return Err("Invalid page path".to_string());
+        }
+        if file_path.file_name().and_then(|s| s.to_str()) == Some("index.md") {
+            fs::remove_file(&file_path)
+                .map_err(|e| format!("Failed to delete page: {}", e))?;
+            if fs::read_dir(parent).map(|mut i| i.next().is_none()).unwrap_or(false) {
+                let _ = fs::remove_dir(parent);
+            }
+            return Ok(());
+        }
+    }
+
+    fs::remove_file(&file_path)
+        .map_err(|e| format!("Failed to delete page: {}", e))?;
+
+    Ok(())
+}
+
 // ====================
 // Pages Commands
 // ====================
+
+#[command]
+pub fn create_page(project_path: String, title: String) -> Result<Page, String> {
+    let project = HexoProject::new(PathBuf::from(&project_path));
+    let pages_dir = project.get_pages_dir();
+
+    fs::create_dir_all(&pages_dir)
+        .map_err(|e| format!("Failed to create pages directory: {}", e))?;
+
+    let mut folder_name = sanitize_filename(&title);
+    if folder_name.is_empty() {
+        folder_name = "page".to_string();
+    }
+
+    let mut page_dir = pages_dir.join(&folder_name);
+    if page_dir.exists() {
+        let timestamp = chrono::Utc::now().timestamp();
+        page_dir = pages_dir.join(format!("{}_{}", folder_name, timestamp));
+    }
+
+    fs::create_dir_all(&page_dir)
+        .map_err(|e| format!("Failed to create page directory: {}", e))?;
+
+    let file_path = page_dir.join("index.md");
+
+    let now = chrono::Local::now();
+    let date_str = now.format("%Y-%m-%d %H:%M:%S").to_string();
+
+    let frontmatter = crate::markdown::Frontmatter {
+        title: title.clone(),
+        date: date_str,
+        tags: Vec::new(),
+        categories: Vec::new(),
+        description: None,
+        permalink: None,
+        list_image: None,
+        list_image_alt: None,
+        main_image: None,
+        main_image_alt: None,
+        custom_fields: Default::default(),
+    };
+
+    let frontmatter_yaml = serde_yaml::to_string(&frontmatter)
+        .map_err(|e| format!("Failed to serialize frontmatter: {}", e))?;
+
+    let content = format!("---\n{}---\n\n", frontmatter_yaml);
+
+    fs::write(&file_path, content)
+        .map_err(|e| format!("Failed to create page: {}", e))?;
+
+    Page::from_file(&file_path, Path::new(&project_path))
+}
 
 #[command]
 pub fn list_pages(project_path: String) -> Result<Vec<Page>, String> {
@@ -236,6 +365,69 @@ pub fn list_pages(project_path: String) -> Result<Vec<Page>, String> {
 // ====================
 // Drafts Commands
 // ====================
+
+#[command]
+pub fn create_draft(project_path: String, title: String) -> Result<Draft, String> {
+    let project = HexoProject::new(PathBuf::from(&project_path));
+    let drafts_dir = project.path.join("source").join("_drafts");
+
+    fs::create_dir_all(&drafts_dir)
+        .map_err(|e| format!("Failed to create drafts directory: {}", e))?;
+
+    let mut filename = sanitize_filename(&title);
+    if filename.is_empty() {
+        filename = "draft".to_string();
+    }
+    let file_path = drafts_dir.join(format!("{}.md", filename));
+
+    let final_path = if file_path.exists() {
+        let timestamp = chrono::Utc::now().timestamp();
+        drafts_dir.join(format!("{}_{}.md", filename, timestamp))
+    } else {
+        file_path
+    };
+
+    let now = chrono::Local::now();
+    let date_str = now.format("%Y-%m-%d %H:%M:%S").to_string();
+
+    let frontmatter = crate::markdown::Frontmatter {
+        title: title.clone(),
+        date: date_str,
+        tags: Vec::new(),
+        categories: Vec::new(),
+        description: None,
+        permalink: None,
+        list_image: None,
+        list_image_alt: None,
+        main_image: None,
+        main_image_alt: None,
+        custom_fields: Default::default(),
+    };
+
+    let frontmatter_yaml = serde_yaml::to_string(&frontmatter)
+        .map_err(|e| format!("Failed to serialize frontmatter: {}", e))?;
+
+    let content = format!("---\n{}---\n\n", frontmatter_yaml);
+
+    fs::write(&final_path, content)
+        .map_err(|e| format!("Failed to create draft: {}", e))?;
+
+    Draft::from_file(&final_path, Path::new(&project_path))
+}
+
+#[command]
+pub fn delete_draft(project_path: String, draft_id: String) -> Result<(), String> {
+    let file_path = Path::new(&project_path).join(&draft_id);
+
+    if !file_path.exists() {
+        return Err("Draft not found".to_string());
+    }
+
+    fs::remove_file(&file_path)
+        .map_err(|e| format!("Failed to delete draft: {}", e))?;
+
+    Ok(())
+}
 
 #[command]
 pub fn list_drafts(project_path: String) -> Result<Vec<Draft>, String> {
@@ -323,13 +515,17 @@ pub fn copy_image_to_project(
         .file_name()
         .and_then(|s| s.to_str())
         .ok_or("Invalid source filename")?;
+    let sanitized_filename = sanitize_image_filename(filename);
 
-    let dest_path = images_dir.join(filename);
+    let dest_path = images_dir.join(&sanitized_filename);
 
     // Handle duplicate filenames
     let final_dest = if dest_path.exists() {
         let timestamp = chrono::Utc::now().timestamp();
-        let stem = source.file_stem().and_then(|s| s.to_str()).unwrap_or("file");
+        let stem = Path::new(&sanitized_filename)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("file");
         let ext = source.extension().and_then(|s| s.to_str()).unwrap_or("");
         images_dir.join(format!("{}_{}.{}", stem, timestamp, ext))
     } else {
@@ -347,6 +543,31 @@ pub fn copy_image_to_project(
         .ok_or("Failed to get relative path")?;
 
     Ok(format!("/{}", relative_path.replace('\\', "/")))
+}
+
+fn sanitize_image_filename(filename: &str) -> String {
+    let path = Path::new(filename);
+    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("image");
+    let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
+
+    let mut sanitized = String::with_capacity(stem.len());
+    for ch in stem.chars() {
+        if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+            sanitized.push(ch);
+        } else if ch.is_whitespace() {
+            sanitized.push('-');
+        }
+    }
+
+    if sanitized.is_empty() {
+        sanitized.push_str("image");
+    }
+
+    if ext.is_empty() {
+        sanitized
+    } else {
+        format!("{}.{}", sanitized, ext)
+    }
 }
 
 #[command]

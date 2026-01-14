@@ -63,6 +63,21 @@ export class BackendService {
     await invoke('save_post', { projectPath, post });
   }
 
+  async getPage(pageId: string): Promise<Page> {
+    const projectPath = this.ensureProject();
+    return invoke<Page>('get_page', { projectPath, pageId });
+  }
+
+  async savePage(page: Page): Promise<void> {
+    const projectPath = this.ensureProject();
+    await invoke('save_page', { projectPath, page });
+  }
+
+  async deletePage(pageId: string): Promise<void> {
+    const projectPath = this.ensureProject();
+    await invoke('delete_page', { projectPath, pageId });
+  }
+
   async createPost(title: string): Promise<Post> {
     const projectPath = this.ensureProject();
     return invoke<Post>('create_post', { projectPath, title });
@@ -77,6 +92,11 @@ export class BackendService {
   // Pages Commands
   // ====================
 
+  async createPage(title: string): Promise<Page> {
+    const projectPath = this.ensureProject();
+    return invoke<Page>('create_page', { projectPath, title });
+  }
+
   async listPages(): Promise<Page[]> {
     const projectPath = this.ensureProject();
     return invoke<Page[]>('list_pages', { projectPath });
@@ -85,6 +105,26 @@ export class BackendService {
   // ====================
   // Drafts Commands
   // ====================
+
+  async createDraft(title: string): Promise<Draft> {
+    const projectPath = this.ensureProject();
+    return invoke<Draft>('create_draft', { projectPath, title });
+  }
+
+  async getDraft(draftId: string): Promise<Draft> {
+    const projectPath = this.ensureProject();
+    return invoke<Draft>('get_draft', { projectPath, draftId });
+  }
+
+  async saveDraft(draft: Draft): Promise<void> {
+    const projectPath = this.ensureProject();
+    await invoke('save_draft', { projectPath, draft });
+  }
+
+  async deleteDraft(draftId: string): Promise<void> {
+    const projectPath = this.ensureProject();
+    await invoke('delete_draft', { projectPath, draftId });
+  }
 
   async listDrafts(): Promise<Draft[]> {
     const projectPath = this.ensureProject();

@@ -5,23 +5,35 @@
 
   interface Props {
     posts: Post[];
-    postType?: 'posts' | 'pages' | 'drafts';
+    activeTab?: 'posts' | 'pages' | 'drafts';
+    postsCount?: number;
+    pagesCount?: number;
+    draftsCount?: number;
     onCreate?: () => void;
     onEdit?: (post: Post) => void;
     onDelete?: (post: Post) => void;
+    onTabChange?: (tab: 'posts' | 'pages' | 'drafts') => void;
   }
 
   let {
     posts,
-    postType,
+    activeTab = 'posts',
+    postsCount = 0,
+    pagesCount = 0,
+    draftsCount = 0,
     onCreate,
     onEdit,
-    onDelete
+    onDelete,
+    onTabChange
   }: Props = $props();
+
+  function handleTabClick(tab: 'posts' | 'pages' | 'drafts') {
+    onTabChange?.(tab);
+  }
 
   let searchQuery = $state('');
   let filterTag = $state<string | null>(null);
-  let sortBy = $state<'date' | 'modified' | 'title'>('modified');
+  let sortBy = $state<'date' | 'modified' | 'title'>('date');
   let sortOrder = $state<'desc' | 'asc'>('desc');
   let showFilters = $state(false);
 
@@ -31,6 +43,12 @@
   ).sort());
 
   // Filter and sort posts
+  const getPostDateTimestamp = (post: Post) => {
+    const dateValue = post.date || post.frontmatter.date;
+    const parsed = dateValue ? Date.parse(dateValue) : NaN;
+    return Number.isNaN(parsed) ? 0 : parsed;
+  };
+
   let filteredPosts = $derived(posts
     .filter((post) => {
       // Search filter
@@ -58,7 +76,7 @@
 
       switch (sortBy) {
         case 'date':
-          comparison = new Date(a.date).getTime() - new Date(b.date).getTime();
+          comparison = getPostDateTimestamp(a) - getPostDateTimestamp(b);
           break;
         case 'modified':
           comparison = a.modifiedAt - b.modifiedAt;
@@ -76,9 +94,7 @@
   }
 
   function handleDelete(post: Post) {
-    if (confirm(`Are you sure you want to delete "${post.title}"?`)) {
-      onDelete?.(post);
-    }
+    onDelete?.(post);
   }
 
   function clearFilters() {
@@ -95,36 +111,30 @@
     <div class="type-tabs">
       <button
         class="tab"
-        class:active={postType === 'posts'}
-        onclick={() => {
-          postType = 'posts';
-        }}
+        class:active={activeTab === 'posts'}
+        onclick={() => handleTabClick('posts')}
         type="button"
       >
         <FileText size={16} />
-        Posts ({posts.length})
+        Posts ({postsCount})
       </button>
       <button
         class="tab"
-        class:active={postType === 'pages'}
-        onclick={() => {
-          postType = 'pages';
-        }}
+        class:active={activeTab === 'pages'}
+        onclick={() => handleTabClick('pages')}
         type="button"
       >
         <File size={16} />
-        Pages
+        Pages ({pagesCount})
       </button>
       <button
         class="tab"
-        class:active={postType === 'drafts'}
-        onclick={() => {
-          postType = 'drafts';
-        }}
+        class:active={activeTab === 'drafts'}
+        onclick={() => handleTabClick('drafts')}
         type="button"
       >
         <FileCode size={16} />
-        Drafts
+        Drafts ({draftsCount})
       </button>
     </div>
 

@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { Server, Play, Square, Globe, Package, Trash2, Upload } from 'lucide-svelte';
+  import { openUrl } from '@tauri-apps/plugin-opener';
+  import { confirm, message } from '@tauri-apps/plugin-dialog';
   import { backend } from '$lib/services/backend';
   import type { CommandOutput } from '$lib/types';
 
@@ -38,10 +40,16 @@
     try {
       serverId = await backend.startHexoServer();
       serverRunning = true;
-      alert('Hexo server started successfully!\nAccess your blog at http://localhost:4000');
+      await message(
+        'Hexo server started successfully!\nAccess your blog at http://localhost:4000',
+        { title: 'Hex Tool' }
+      );
     } catch (err) {
       console.error('Failed to start server:', err);
-      alert('Failed to start server: ' + (err instanceof Error ? err.message : 'Unknown error'));
+      await message(
+        'Failed to start server: ' + (err instanceof Error ? err.message : 'Unknown error'),
+        { title: 'Hex Tool', kind: 'error' }
+      );
     } finally {
       loading = false;
     }
@@ -55,48 +63,72 @@
       await backend.stopHexoServer(serverId);
       serverRunning = false;
       serverId = null;
-      alert('Hexo server stopped');
+      await message('Hexo server stopped', { title: 'Hex Tool' });
     } catch (err) {
       console.error('Failed to stop server:', err);
-      alert('Failed to stop server: ' + (err instanceof Error ? err.message : 'Unknown error'));
+      await message(
+        'Failed to stop server: ' + (err instanceof Error ? err.message : 'Unknown error'),
+        { title: 'Hex Tool', kind: 'error' }
+      );
     } finally {
       loading = false;
     }
   }
 
-  function openInBrowser() {
+  async function openInBrowser() {
     if (!serverRunning) {
-      alert('Server is not running. Please start the server first.');
+      await message('Server is not running. Please start the server first.', {
+        title: 'Hex Tool',
+        kind: 'warning'
+      });
       return;
     }
-    window.open('http://localhost:4000', '_blank');
+    try {
+      await openUrl('http://localhost:4000');
+    } catch (err) {
+      console.error('Failed to open browser:', err);
+      await message(
+        'Failed to open browser: ' + (err instanceof Error ? err.message : 'Unknown error'),
+        { title: 'Hex Tool', kind: 'error' }
+      );
+    }
   }
 
   async function runCommand(command: string, commandName: string) {
     if (loading) return;
 
-    const confirmed = confirm(`Run 'hexo ${command}'?`);
+    const confirmed = await confirm(`Run "hexo ${command}"?`, {
+      title: 'Hex Tool',
+      kind: 'warning'
+    });
     if (!confirmed) return;
 
     loading = true;
-    showCommandOutput = true;
+    showCommandOutput = false;
     commandOutput = null;
 
     try {
       const output = await backend.runHexoCommand(command);
-      commandOutput = output;
+      commandOutput = {
+        ...output,
+        stdout: stripAnsi(output.stdout),
+        stderr: stripAnsi(output.stderr)
+      };
+      showCommandOutput = true;
 
-      if (output.success) {
-        alert(`${commandName} completed successfully!`);
-      } else {
-        alert(`${commandName} failed. Check output for details.`);
-      }
     } catch (err) {
       console.error(`Failed to run ${command}:`, err);
-      alert(`Failed to run ${command}: ` + (err instanceof Error ? err.message : 'Unknown error'));
+      await message(
+        `Failed to run ${command}: ` + (err instanceof Error ? err.message : 'Unknown error'),
+        { title: 'Hex Tool', kind: 'error' }
+      );
     } finally {
       loading = false;
     }
+  }
+
+  function stripAnsi(text: string) {
+    return text.replace(/\x1b\[[0-9;]*m/g, '');
   }
 
   function closeOutput() {

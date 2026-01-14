@@ -1,18 +1,37 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { Plus, FolderOpen } from 'lucide-svelte';
+  import { Plus, FolderOpen, X } from 'lucide-svelte';
+  import { confirm, message } from '@tauri-apps/plugin-dialog';
   import { backend } from '$lib/services/backend';
   import { PostList, ImageGallery, HexoControls } from '$lib/components';
-  import type { Post, ImageInfo } from '$lib/types';
+  import type { Post, Page, Draft, ImageInfo } from '$lib/types';
 
   let posts: Post[] = $state([]);
+  let pages: Page[] = $state([]);
+  let drafts: Draft[] = $state([]);
   let images: ImageInfo[] = $state([]);
+  let activeTab = $state<'posts' | 'pages' | 'drafts'>('posts');
   let loading = $state(true);
   let error = $state<string | null>(null);
   let showImageGallery = $state(false);
+  let showCreateDialog = $state(false);
+  let newPostTitle = $state('');
+  let createError = $state<string | null>(null);
   let pendingImageField:
     | { field: 'listImage' | 'mainImage'; post: Post }
     | null = null;
+  let createKind = $derived(
+    activeTab === 'pages' ? 'Page' :
+    activeTab === 'drafts' ? 'Draft' :
+    'Post'
+  );
+
+  // Get current items based on active tab
+  let currentItems = $derived(
+    activeTab === 'posts' ? posts :
+    activeTab === 'pages' ? pages :
+    drafts
+  ) as Post[];
 
   onMount(async () => {
     await loadData();
@@ -30,12 +49,16 @@
         return;
       }
 
-      const [postsData, imagesData] = await Promise.all([
+      const [postsData, pagesData, draftsData, imagesData] = await Promise.all([
         backend.listPosts(),
+        backend.listPages(),
+        backend.listDrafts(),
         backend.listImages(),
       ]);
 
       posts = postsData;
+      pages = pagesData;
+      drafts = draftsData;
       images = imagesData;
     } catch (err) {
       console.error('Failed to load data:', err);
@@ -45,32 +68,111 @@
     }
   }
 
-  async function handleCreatePost() {
-    try {
-      const title = prompt('Enter post title:');
-      if (!title) return;
+  function handleTabChange(tab: 'posts' | 'pages' | 'drafts') {
+    activeTab = tab;
+  }
 
-      const newPost = await backend.createPost(title);
-      // Navigate to editor
-      window.location.href = `/editor?id=${encodeURIComponent(newPost.id)}`;
+  function handleCreatePost() {
+    createError = null;
+    newPostTitle = '';
+    showCreateDialog = true;
+  }
+
+  async function confirmCreatePost() {
+    try {
+      const title = newPostTitle.trim();
+      if (!title) {
+        createError = 'Title is required.';
+        return;
+      }
+
+      if (activeTab === 'posts') {
+        const newPost = await backend.createPost(title);
+        window.location.href = `/editor?id=${encodeURIComponent(newPost.id)}`;
+        return;
+      }
+
+      if (activeTab === 'pages') {
+        await backend.createPage(title);
+      } else {
+        await backend.createDraft(title);
+      }
+
+      await loadData();
+      showCreateDialog = false;
     } catch (err) {
-      console.error('Failed to create post:', err);
-      alert('Failed to create post: ' + (err instanceof Error ? err.message : 'Unknown error'));
+      console.error('Failed to create item:', err);
+      createError = err instanceof Error ? err.message : 'Unknown error';
+      await message(`Failed to create ${createKind.toLowerCase()}: ` + createError, {
+        title: 'Hex Tool',
+        kind: 'error'
+      });
     }
   }
 
-  function handleEdit(post: Post) {
-    window.location.href = `/editor?id=${encodeURIComponent(post.id)}`;
+  function closeCreateDialog() {
+    showCreateDialog = false;
   }
 
-  async function handleDelete(post: Post) {
+  function handleEdit(item: Post | Page | Draft, type: 'post' | 'page' | 'draft') {
+    window.location.href = `/editor?id=${encodeURIComponent(item.id)}&type=${type}`;
+  }
+
+  async function handleDeletePost(post: Post) {
     try {
+      const shouldDelete = await confirm(`Delete "${post.title}"?`, {
+        title: 'Hex Tool',
+        kind: 'warning'
+      });
+      if (!shouldDelete) return;
+
       await backend.deletePost(post.id);
       // Reload posts
       posts = await backend.listPosts();
     } catch (err) {
       console.error('Failed to delete post:', err);
-      alert('Failed to delete post: ' + (err instanceof Error ? err.message : 'Unknown error'));
+      await message('Failed to delete post: ' + (err instanceof Error ? err.message : 'Unknown error'), {
+        title: 'Hex Tool',
+        kind: 'error'
+      });
+    }
+  }
+
+  async function handleDeletePage(page: Page) {
+    try {
+      const shouldDelete = await confirm(`Delete "${page.title}"?`, {
+        title: 'Hex Tool',
+        kind: 'warning'
+      });
+      if (!shouldDelete) return;
+
+      await backend.deletePage(page.id);
+      pages = await backend.listPages();
+    } catch (err) {
+      console.error('Failed to delete page:', err);
+      await message('Failed to delete page: ' + (err instanceof Error ? err.message : 'Unknown error'), {
+        title: 'Hex Tool',
+        kind: 'error'
+      });
+    }
+  }
+
+  async function handleDeleteDraft(draft: Draft) {
+    try {
+      const shouldDelete = await confirm(`Delete "${draft.title}"?`, {
+        title: 'Hex Tool',
+        kind: 'warning'
+      });
+      if (!shouldDelete) return;
+
+      await backend.deleteDraft(draft.id);
+      drafts = await backend.listDrafts();
+    } catch (err) {
+      console.error('Failed to delete draft:', err);
+      await message('Failed to delete draft: ' + (err instanceof Error ? err.message : 'Unknown error'), {
+        title: 'Hex Tool',
+        kind: 'error'
+      });
     }
   }
 
@@ -197,10 +299,26 @@
       </div>
     {:else}
       <PostList
-        {posts}
+        posts={currentItems}
+        activeTab={activeTab}
+        postsCount={posts.length}
+        pagesCount={pages.length}
+        draftsCount={drafts.length}
         onCreate={handleCreatePost}
-        onEdit={handleEdit}
-        onDelete={handleDelete}
+        onEdit={(item) => handleEdit(
+          item,
+          activeTab === 'pages' ? 'page' : activeTab === 'drafts' ? 'draft' : 'post'
+        )}
+        onDelete={(item) => {
+          if (activeTab === 'pages') {
+            handleDeletePage(item as Page);
+          } else if (activeTab === 'drafts') {
+            handleDeleteDraft(item as Draft);
+          } else {
+            handleDeletePost(item as Post);
+          }
+        }}
+        onTabChange={handleTabChange}
       />
     {/if}
   </main>
@@ -213,6 +331,49 @@
     onDelete={handleImageDelete}
     onUpload={handleUploadImage}
   />
+
+  <!-- New Post Modal -->
+  {#if showCreateDialog}
+    <div class="modal-overlay" onclick={closeCreateDialog}>
+      <div class="modal-content" onclick={(e) => e.stopPropagation()}>
+        <div class="modal-header">
+          <h3>Create {createKind}</h3>
+          <button class="close-btn" onclick={closeCreateDialog} type="button" aria-label="Close">
+            <X size={20} />
+          </button>
+        </div>
+        <div class="modal-body">
+          <label class="modal-label" for="new-post-title">Title</label>
+          <input
+            id="new-post-title"
+            class="modal-input"
+            type="text"
+            placeholder={"Enter " + createKind.toLowerCase() + " title"}
+            bind:value={newPostTitle}
+            onkeydown={(e) => {
+              if (e.key === 'Enter') {
+                confirmCreatePost();
+              }
+            }}
+          />
+          {#if createError}
+            <p class="modal-error">{createError}</p>
+          {/if}
+        </div>
+        <div class="modal-footer">
+          <button class="modal-btn" onclick={closeCreateDialog} type="button">Cancel</button>
+          <button
+            class="modal-btn primary"
+            onclick={confirmCreatePost}
+            type="button"
+            disabled={!newPostTitle.trim()}
+          >
+            Create {createKind}
+          </button>
+        </div>
+      </div>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -235,6 +396,126 @@
     padding: 1.5rem 2rem;
     border-bottom: 1px solid #e5e5e5;
     background-color: #ffffff;
+  }
+
+  .modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1100;
+    padding: 1rem;
+  }
+
+  .modal-content {
+    width: 100%;
+    max-width: 420px;
+    background-color: #ffffff;
+    border-radius: 0.75rem;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  :global(.dark .modal-content) {
+    background-color: #2d2d2d;
+  }
+
+  .modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid #e5e7eb;
+  }
+
+  :global(.dark .modal-header) {
+    border-bottom-color: #404040;
+  }
+
+  .close-btn {
+    background: none;
+    border: none;
+    color: #6b7280;
+    cursor: pointer;
+  }
+
+  :global(.dark .close-btn) {
+    color: #d1d5db;
+  }
+
+  .modal-body {
+    padding: 1rem 1.25rem 0.5rem;
+  }
+
+  .modal-label {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #374151;
+  }
+
+  :global(.dark .modal-label) {
+    color: #e5e7eb;
+  }
+
+  .modal-input {
+    width: 100%;
+    margin-top: 0.5rem;
+    padding: 0.625rem 0.75rem;
+    border-radius: 0.5rem;
+    border: 1px solid #e5e7eb;
+    font-size: 0.95rem;
+  }
+
+  :global(.dark .modal-input) {
+    background-color: #1f1f1f;
+    border-color: #404040;
+    color: #e5e7eb;
+  }
+
+  .modal-error {
+    margin-top: 0.5rem;
+    color: #dc2626;
+    font-size: 0.85rem;
+  }
+
+  .modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    padding: 0.75rem 1.25rem 1.25rem;
+  }
+
+  .modal-btn {
+    padding: 0.5rem 0.9rem;
+    border-radius: 0.5rem;
+    border: 1px solid #d1d5db;
+    background-color: #ffffff;
+    color: #111827;
+    cursor: pointer;
+  }
+
+  .modal-btn.primary {
+    background-color: #2563eb;
+    border-color: #2563eb;
+    color: #ffffff;
+  }
+
+  .modal-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  :global(.dark .modal-btn) {
+    background-color: #1f1f1f;
+    border-color: #404040;
+    color: #e5e7eb;
   }
 
   :global(.dark .page-header) {
