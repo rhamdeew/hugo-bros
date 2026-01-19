@@ -16,13 +16,37 @@ export interface Frontmatter {
   date: string;
   tags: string[];
   categories: string[];
-  description?: string;
+  updated?: string;
+  comments?: boolean;
+  layout?: string;
   permalink?: string;
-  listImage?: string;
-  listImageAlt?: string;
-  mainImage?: string;
-  mainImageAlt?: string;
+  description?: string;
   customFields?: Record<string, unknown>;
+}
+
+export interface FrontmatterFieldConfig {
+  name: string;
+  label?: string;
+  type: string;
+  description?: string;
+  ui?: {
+    placeholder?: string;
+    rows?: number;
+  };
+}
+
+export interface FrontmatterFieldGroup {
+  name: string;
+  label?: string;
+  fields: string[];
+  collapsed?: boolean;
+}
+
+export interface FrontmatterConfig {
+  version: string;
+  previewImageField?: string;
+  customFields: FrontmatterFieldConfig[];
+  fieldGroups: FrontmatterFieldGroup[];
 }
 
 export interface Page {

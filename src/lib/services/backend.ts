@@ -1,6 +1,15 @@
 // Backend service for Tauri command invocations
 import { invoke } from '@tauri-apps/api/core';
-import type { Post, Page, Draft, ImageInfo, HexoConfig, AppConfig, CommandOutput } from '$lib/types';
+import type {
+  Post,
+  Page,
+  Draft,
+  ImageInfo,
+  HexoConfig,
+  FrontmatterConfig,
+  AppConfig,
+  CommandOutput
+} from '$lib/types';
 
 export class BackendService {
   private projectPath: string | null = null;
@@ -42,6 +51,11 @@ export class BackendService {
   async getProjectConfig(): Promise<HexoConfig> {
     const projectPath = this.ensureProject();
     return invoke<HexoConfig>('get_project_config', { projectPath });
+  }
+
+  async getFrontmatterConfig(): Promise<FrontmatterConfig> {
+    const projectPath = this.ensureProject();
+    return invoke<FrontmatterConfig>('get_frontmatter_config', { projectPath });
   }
 
   // ====================

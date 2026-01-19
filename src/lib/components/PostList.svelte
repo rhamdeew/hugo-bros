@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Search, SlidersHorizontal, Plus, FileText, File, FileCode } from 'lucide-svelte';
   import PostCard from './PostCard.svelte';
-  import type { Post } from '$lib/types';
+  import type { FrontmatterConfig, Post } from '$lib/types';
 
   interface Props {
     posts: Post[];
@@ -9,6 +9,7 @@
     postsCount?: number;
     pagesCount?: number;
     draftsCount?: number;
+    frontmatterConfig?: FrontmatterConfig;
     onCreate?: () => void;
     onEdit?: (post: Post) => void;
     onDelete?: (post: Post) => void;
@@ -21,6 +22,7 @@
     postsCount = 0,
     pagesCount = 0,
     draftsCount = 0,
+    frontmatterConfig,
     onCreate,
     onEdit,
     onDelete,
@@ -231,6 +233,7 @@
       {#each filteredPosts as post (post.id)}
         <PostCard
           post={post}
+          {frontmatterConfig}
           onClick={() => handleEdit(post)}
           onDelete={() => handleDelete(post)}
         />

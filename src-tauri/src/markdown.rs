@@ -15,13 +15,12 @@ pub struct Frontmatter {
   pub tags: Vec<String>,
   #[serde(default)]
   pub categories: Vec<String>,
-  pub description: Option<String>,
+  pub updated: Option<String>,
+  pub comments: Option<bool>,
+  pub layout: Option<String>,
   pub permalink: Option<String>,
-  pub list_image: Option<String>,
-  pub list_image_alt: Option<String>,
-  pub main_image: Option<String>,
-  pub main_image_alt: Option<String>,
-  #[serde(flatten)]
+  pub description: Option<String>,
+  #[serde(default)]
   pub custom_fields: HashMap<String, serde_yaml::Value>,
 }
 
@@ -34,17 +33,13 @@ struct FrontmatterYaml {
     pub tags: Vec<String>,
     #[serde(default)]
     pub categories: Vec<String>,
-    pub description: Option<String>,
+    pub updated: Option<String>,
+    pub comments: Option<bool>,
+    pub layout: Option<String>,
     pub permalink: Option<String>,
-    #[serde(alias = "listImage")]
-    pub list_image: Option<String>,
-    #[serde(alias = "listImageAlt")]
-    pub list_image_alt: Option<String>,
-    #[serde(alias = "mainImage")]
-    pub main_image: Option<String>,
-    #[serde(alias = "mainImageAlt")]
-    pub main_image_alt: Option<String>,
+    pub description: Option<String>,
     #[serde(flatten)]
+    #[serde(default)]
     pub custom_fields: HashMap<String, serde_yaml::Value>,
 }
 
@@ -55,12 +50,11 @@ impl From<FrontmatterYaml> for Frontmatter {
             date: frontmatter.date,
             tags: frontmatter.tags,
             categories: frontmatter.categories,
-            description: frontmatter.description,
+            updated: frontmatter.updated,
+            comments: frontmatter.comments,
+            layout: frontmatter.layout,
             permalink: frontmatter.permalink,
-            list_image: frontmatter.list_image,
-            list_image_alt: frontmatter.list_image_alt,
-            main_image: frontmatter.main_image,
-            main_image_alt: frontmatter.main_image_alt,
+            description: frontmatter.description,
             custom_fields: frontmatter.custom_fields,
         }
     }
@@ -73,12 +67,11 @@ impl From<Frontmatter> for FrontmatterYaml {
             date: frontmatter.date,
             tags: frontmatter.tags,
             categories: frontmatter.categories,
-            description: frontmatter.description,
+            updated: frontmatter.updated,
+            comments: frontmatter.comments,
+            layout: frontmatter.layout,
             permalink: frontmatter.permalink,
-            list_image: frontmatter.list_image,
-            list_image_alt: frontmatter.list_image_alt,
-            main_image: frontmatter.main_image,
-            main_image_alt: frontmatter.main_image_alt,
+            description: frontmatter.description,
             custom_fields: frontmatter.custom_fields,
         }
     }
@@ -134,12 +127,11 @@ impl MarkdownDocument {
             date: "".to_string(),
             tags: Vec::new(),
             categories: Vec::new(),
-            description: None,
+            updated: None,
+            comments: None,
+            layout: None,
             permalink: None,
-            list_image: None,
-            list_image_alt: None,
-            main_image: None,
-            main_image_alt: None,
+            description: None,
             custom_fields: HashMap::new(),
         };
 

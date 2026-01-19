@@ -25,6 +25,8 @@
     AlertCircle,
     CheckCircle,
     Loader2,
+    ChevronDown,
+    ChevronUp,
     ChevronLeft,
     ChevronRight,
     Plus,
@@ -35,7 +37,7 @@
   import { open } from '@tauri-apps/plugin-dialog';
   import ImageGallery from '$lib/components/ImageGallery.svelte';
   import { backend } from '$lib/services/backend';
-  import type { Post, ImageInfo, Frontmatter } from '$lib/types';
+  import type { Post, ImageInfo, FrontmatterConfig } from '$lib/types';
 
   // State
   let post = $state<Post | null>(null);
@@ -50,12 +52,18 @@
   let showPreview = $state(true);
   let showFrontmatter = $state(true);
   let showImageGallery = $state(false);
-  let pendingImageField = $state<'listImage' | 'mainImage' | 'content' | null>(null);
+  let pendingImageField = $state<
+    | { kind: 'content' }
+    | { kind: 'frontmatter'; fieldName: string }
+    | null
+  >(null);
   let images = $state<ImageInfo[]>([]);
   let isLoading = $state(true);
   let loadError = $state<string | null>(null);
   let entryType = $state<'post' | 'page' | 'draft'>('post');
   let shortcutsCleanup: (() => void) | null = null;
+  let frontmatterConfig = $state<FrontmatterConfig | null>(null);
+  let customGroupCollapsed = $state<Record<string, boolean>>({});
 
   // Editor refs
   let textareaRef = $state<HTMLTextAreaElement | null>(null);
@@ -79,11 +87,126 @@
     return convertFileSrc(fullPath);
   }
 
+  function formatFieldLabel(name: string): string {
+    return name
+      .replace(/[_-]+/g, ' ')
+      .replace(/([a-z])([A-Z])/g, '$1 $2')
+      .replace(/\b\w/g, (char) => char.toUpperCase());
+  }
+
+  function buildCustomFieldGroups(config: FrontmatterConfig | null) {
+    if (!config || config.customFields.length === 0) {
+      return [];
+    }
+
+    const fieldMap = new Map(config.customFields.map((field) => [field.name, field]));
+    const groupedFields = new Set<string>();
+    const groups = (config.fieldGroups || []).map((group) => {
+      const fields = group.fields
+        .map((fieldName) => fieldMap.get(fieldName))
+        .filter((field): field is NonNullable<typeof field> => !!field);
+      fields.forEach((field) => groupedFields.add(field.name));
+      return {
+        name: group.name,
+        label: group.label || formatFieldLabel(group.name),
+        collapsed: group.collapsed ?? false,
+        fields
+      };
+    });
+
+    const ungrouped = config.customFields.filter((field) => !groupedFields.has(field.name));
+    if (ungrouped.length > 0) {
+      groups.push({
+        name: 'custom',
+        label: 'Custom Fields',
+        collapsed: false,
+        fields: ungrouped
+      });
+    }
+
+    return groups;
+  }
+
+  function getCustomFieldValue(name: string) {
+    return post?.frontmatter.customFields?.[name];
+  }
+
+  function getCustomFieldString(name: string): string {
+    const value = getCustomFieldValue(name);
+    return typeof value === 'string' ? value : value == null ? '' : String(value);
+  }
+
+  function getCustomFieldInputValue(name: string, fieldType: string): string {
+    const value = getCustomFieldValue(name);
+    if (value == null) return '';
+    if (fieldType === 'object' || fieldType === 'array') {
+      if (typeof value === 'string') return value;
+      try {
+        return JSON.stringify(value, null, 2);
+      } catch {
+        return String(value);
+      }
+    }
+    return typeof value === 'string' ? value : String(value);
+  }
+
+  function parseCustomFieldValue(fieldType: string, rawValue: string) {
+    const trimmed = rawValue.trim();
+    if (!trimmed) return null;
+
+    if (fieldType === 'number') {
+      const parsed = Number(trimmed);
+      return Number.isNaN(parsed) ? null : parsed;
+    }
+
+    if (fieldType === 'array') {
+      if (trimmed.startsWith('[')) {
+        try {
+          const parsed = JSON.parse(trimmed);
+          return Array.isArray(parsed) ? parsed : null;
+        } catch {
+          return trimmed.split(',').map((entry) => entry.trim()).filter(Boolean);
+        }
+      }
+      return trimmed.split(',').map((entry) => entry.trim()).filter(Boolean);
+    }
+
+    if (fieldType === 'object') {
+      try {
+        const parsed = JSON.parse(trimmed);
+        return typeof parsed === 'object' && parsed !== null ? parsed : null;
+      } catch {
+        return trimmed;
+      }
+    }
+
+    return rawValue;
+  }
+
+  function setCustomFieldValue(name: string, value: unknown) {
+    if (!post) return;
+    post.frontmatter.customFields = post.frontmatter.customFields || {};
+    if (value === '' || value === null || value === undefined) {
+      delete post.frontmatter.customFields[name];
+    } else {
+      post.frontmatter.customFields[name] = value;
+    }
+    handleFrontmatterChange();
+  }
+
+  function toggleCustomGroup(name: string) {
+    customGroupCollapsed = {
+      ...customGroupCollapsed,
+      [name]: !customGroupCollapsed[name]
+    };
+  }
+
   // Computed
   let wordCount = $derived(markdownContent.trim() ? markdownContent.trim().split(/\s+/).length : 0);
   let characterCount = $derived(markdownContent.length);
   let previewHtml = $derived(renderMarkdown(markdownContent));
   let postTitle = $derived(post?.title || 'Untitled Post');
+  let customFieldGroups = $derived(buildCustomFieldGroups(frontmatterConfig));
 
   // Navigation guard
   beforeNavigate((navigation) => {
@@ -120,6 +243,17 @@
       console.error('Failed to load images:', err);
     }
 
+    try {
+      frontmatterConfig = await backend.getFrontmatterConfig();
+      const collapsedState: Record<string, boolean> = {};
+      for (const group of frontmatterConfig.fieldGroups || []) {
+        collapsedState[group.name] = group.collapsed ?? false;
+      }
+      customGroupCollapsed = collapsedState;
+    } catch (err) {
+      console.error('Failed to load frontmatter config:', err);
+    }
+
     // Setup auto-save (every 30 seconds)
     autoSaveTimer = setInterval(() => {
       if (hasUnsavedChanges && saveStatus === 'unsaved') {
@@ -154,6 +288,7 @@
       // Frontmatter is stored separately in post.frontmatter
       markdownContent = post.content;
       originalContent = markdownContent;
+      post.frontmatter.customFields = post.frontmatter.customFields || {};
       hasUnsavedChanges = false;
       saveStatus = 'saved';
       document.title = `${post.title} - Hex Tool`;
@@ -339,21 +474,22 @@
     handleContentChange();
   }
 
-  function openImageGallery(field: 'listImage' | 'mainImage' | 'content') {
-    pendingImageField = field;
+  function openImageGalleryForContent() {
+    pendingImageField = { kind: 'content' };
+    showImageGallery = true;
+  }
+
+  function openImageGalleryForFrontmatter(fieldName: string) {
+    pendingImageField = { kind: 'frontmatter', fieldName };
     showImageGallery = true;
   }
 
   function handleImageSelect(image: ImageInfo) {
     if (!post) return;
 
-    if (pendingImageField === 'listImage') {
-      post.frontmatter.listImage = image.url;
-      handleFrontmatterChange();
-    } else if (pendingImageField === 'mainImage') {
-      post.frontmatter.mainImage = image.url;
-      handleFrontmatterChange();
-    } else if (pendingImageField === 'content' && textareaRef) {
+    if (pendingImageField?.kind === 'frontmatter') {
+      setCustomFieldValue(pendingImageField.fieldName, image.url);
+    } else if (pendingImageField?.kind === 'content' && textareaRef) {
       const start = textareaRef.selectionStart;
       const insertion = `![${image.filename}](${image.url})`;
       const before = markdownContent.substring(0, start);
@@ -563,7 +699,7 @@
           <button onclick={insertLink} class="toolbar-btn" title="Insert Link (Ctrl+K)" type="button">
             <LinkIcon size={18} />
           </button>
-          <button onclick={() => openImageGallery('content')} class="toolbar-btn" title="Insert Image" type="button">
+          <button onclick={openImageGalleryForContent} class="toolbar-btn" title="Insert Image" type="button">
             <ImageIcon size={18} />
           </button>
         </div>
@@ -667,6 +803,17 @@
               />
             </div>
 
+            <!-- Updated -->
+            <div class="field-group">
+              <label for="updated">Updated</label>
+              <input
+                id="updated"
+                type="datetime-local"
+                bind:value={post.frontmatter.updated}
+                oninput={handleFrontmatterChange}
+              />
+            </div>
+
             <!-- Description -->
             <div class="field-group">
               <label for="description">Description</label>
@@ -743,61 +890,187 @@
               />
             </div>
 
-            <!-- List Image -->
+            <!-- Layout -->
             <div class="field-group">
-              <label>List Image</label>
-              <div class="image-field">
-                <input
-                  type="text"
-                  bind:value={post.frontmatter.listImage}
-                  oninput={handleFrontmatterChange}
-                  placeholder="/images/cover.jpg"
-                />
-                <button onclick={() => openImageGallery('listImage')} type="button" class="image-btn">
-                  <ImageIcon size={16} />
-                </button>
-              </div>
-              {#if post.frontmatter.listImage}
-                <div class="image-preview">
-                  <img src={getPreviewImageSrc(post.frontmatter.listImage)} alt="List image preview" />
-                </div>
-              {/if}
+              <label for="layout">Layout</label>
               <input
+                id="layout"
                 type="text"
-                bind:value={post.frontmatter.listImageAlt}
+                bind:value={post.frontmatter.layout}
                 oninput={handleFrontmatterChange}
-                placeholder="Alt text for list image"
-                class="alt-input"
+                placeholder="post"
               />
             </div>
 
-            <!-- Main Image -->
-            <div class="field-group">
-              <label>Main Image</label>
-              <div class="image-field">
+            <!-- Comments -->
+            <div class="field-group checkbox-field">
+              <label class="checkbox-label" for="comments">
                 <input
-                  type="text"
-                  bind:value={post.frontmatter.mainImage}
-                  oninput={handleFrontmatterChange}
-                  placeholder="/images/main.jpg"
+                  id="comments"
+                  type="checkbox"
+                  checked={post.frontmatter.comments ?? false}
+                  onchange={(e) => {
+                    const target = e.target as HTMLInputElement;
+                    post.frontmatter.comments = target.checked;
+                    handleFrontmatterChange();
+                  }}
                 />
-                <button onclick={() => openImageGallery('mainImage')} type="button" class="image-btn">
-                  <ImageIcon size={16} />
-                </button>
-              </div>
-              {#if post.frontmatter.mainImage}
-                <div class="image-preview">
-                  <img src={getPreviewImageSrc(post.frontmatter.mainImage)} alt="Main image preview" />
-                </div>
-              {/if}
-              <input
-                type="text"
-                bind:value={post.frontmatter.mainImageAlt}
-                oninput={handleFrontmatterChange}
-                placeholder="Alt text for main image"
-                class="alt-input"
-              />
+                <span>Allow comments</span>
+              </label>
             </div>
+
+            {#if customFieldGroups.length > 0}
+              <div class="custom-fields">
+                {#each customFieldGroups as group (group.name)}
+                  <div class="custom-field-group">
+                    <div
+                      class="custom-field-group-header"
+                      onclick={() => toggleCustomGroup(group.name)}
+                    >
+                      <span>{group.label}</span>
+                      <button class="group-toggle" type="button">
+                        {#if customGroupCollapsed[group.name] ?? group.collapsed}
+                          <ChevronDown size={16} />
+                        {:else}
+                          <ChevronUp size={16} />
+                        {/if}
+                      </button>
+                    </div>
+                    {#if !(customGroupCollapsed[group.name] ?? group.collapsed)}
+                      <div class="custom-field-group-body">
+                        {#each group.fields as field (field.name)}
+                          {#if field.type === 'boolean'}
+                            <div class="field-group checkbox-field">
+                              <label class="checkbox-label" for={`custom-${field.name}`}>
+                                <input
+                                  id={`custom-${field.name}`}
+                                  type="checkbox"
+                                  checked={Boolean(getCustomFieldValue(field.name))}
+                                  onchange={(e) =>
+                                    setCustomFieldValue(
+                                      field.name,
+                                      (e.target as HTMLInputElement).checked
+                                    )}
+                                />
+                                <span>{field.label || formatFieldLabel(field.name)}</span>
+                              </label>
+                              {#if field.description}
+                                <span class="field-hint">{field.description}</span>
+                              {/if}
+                            </div>
+                          {:else}
+                            <div class="field-group">
+                              <label for={`custom-${field.name}`}>
+                                {field.label || formatFieldLabel(field.name)}
+                              </label>
+                              {#if field.type === 'text'}
+                                <textarea
+                                  id={`custom-${field.name}`}
+                                  rows={field.ui?.rows || 3}
+                                  placeholder={field.ui?.placeholder || ''}
+                                  value={getCustomFieldInputValue(field.name, field.type)}
+                                  oninput={(e) =>
+                                    setCustomFieldValue(
+                                      field.name,
+                                      (e.target as HTMLTextAreaElement).value
+                                    )}
+                                ></textarea>
+                              {:else if field.type === 'number'}
+                                <input
+                                  id={`custom-${field.name}`}
+                                  type="number"
+                                  placeholder={field.ui?.placeholder || ''}
+                                  value={getCustomFieldInputValue(field.name, field.type)}
+                                  oninput={(e) =>
+                                    setCustomFieldValue(
+                                      field.name,
+                                      parseCustomFieldValue(
+                                        field.type,
+                                        (e.target as HTMLInputElement).value
+                                      )
+                                    )}
+                                />
+                              {:else if field.type === 'date' || field.type === 'datetime'}
+                                <input
+                                  id={`custom-${field.name}`}
+                                  type={field.type === 'date' ? 'date' : 'datetime-local'}
+                                  placeholder={field.ui?.placeholder || ''}
+                                  value={getCustomFieldInputValue(field.name, field.type)}
+                                  oninput={(e) =>
+                                    setCustomFieldValue(
+                                      field.name,
+                                      (e.target as HTMLInputElement).value
+                                    )}
+                                />
+                              {:else if field.type === 'image'}
+                                <div class="image-field">
+                                  <input
+                                    id={`custom-${field.name}`}
+                                    type="text"
+                                    placeholder={field.ui?.placeholder || '/images/cover.jpg'}
+                                    value={getCustomFieldString(field.name)}
+                                    oninput={(e) =>
+                                      setCustomFieldValue(
+                                        field.name,
+                                        (e.target as HTMLInputElement).value
+                                      )}
+                                  />
+                                  <button
+                                    onclick={() => openImageGalleryForFrontmatter(field.name)}
+                                    type="button"
+                                    class="image-btn"
+                                  >
+                                    <ImageIcon size={16} />
+                                  </button>
+                                </div>
+                                {#if getCustomFieldString(field.name)}
+                                  <div class="image-preview">
+                                    <img
+                                      src={getPreviewImageSrc(getCustomFieldString(field.name))}
+                                      alt={`${field.label || formatFieldLabel(field.name)} preview`}
+                                    />
+                                  </div>
+                                {/if}
+                              {:else if field.type === 'array' || field.type === 'object'}
+                                <textarea
+                                  id={`custom-${field.name}`}
+                                  rows={field.ui?.rows || 3}
+                                  placeholder={field.ui?.placeholder || ''}
+                                  value={getCustomFieldInputValue(field.name, field.type)}
+                                  oninput={(e) =>
+                                    setCustomFieldValue(
+                                      field.name,
+                                      parseCustomFieldValue(
+                                        field.type,
+                                        (e.target as HTMLTextAreaElement).value
+                                      )
+                                    )}
+                                ></textarea>
+                              {:else}
+                                <input
+                                  id={`custom-${field.name}`}
+                                  type="text"
+                                  placeholder={field.ui?.placeholder || ''}
+                                  value={getCustomFieldInputValue(field.name, field.type)}
+                                  oninput={(e) =>
+                                    setCustomFieldValue(
+                                      field.name,
+                                      (e.target as HTMLInputElement).value
+                                    )}
+                                />
+                              {/if}
+                              {#if field.description}
+                                <span class="field-hint">{field.description}</span>
+                              {/if}
+                            </div>
+                          {/if}
+                        {/each}
+                      </div>
+                    {/if}
+                  </div>
+                {/each}
+              </div>
+            {/if}
           </div>
         </aside>
       {/if}
@@ -1279,6 +1552,88 @@
     resize: vertical;
     min-height: 60px;
     font-family: inherit;
+  }
+
+  .field-hint {
+    font-size: 0.75rem;
+    color: #737373;
+  }
+
+  :global(.dark .field-hint) {
+    color: #a3a3a3;
+  }
+
+  .checkbox-field {
+    gap: 0.5rem;
+  }
+
+  .checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+    color: #1a1a1a;
+  }
+
+  :global(.dark .checkbox-label) {
+    color: #f5f5f5;
+  }
+
+  .checkbox-label input {
+    width: auto;
+  }
+
+  .custom-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .custom-field-group {
+    border: 1px solid #e5e5e5;
+    border-radius: 0.5rem;
+    overflow: hidden;
+    background-color: #fafafa;
+  }
+
+  :global(.dark .custom-field-group) {
+    background-color: #333333;
+    border-color: #525252;
+  }
+
+  .custom-field-group-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem 0.75rem;
+    cursor: pointer;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #525252;
+  }
+
+  :global(.dark .custom-field-group-header) {
+    color: #a3a3a3;
+  }
+
+  .group-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    background: none;
+    border: none;
+    color: inherit;
+    cursor: pointer;
+  }
+
+  .custom-field-group-body {
+    padding: 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
   }
 
   /* Chips */

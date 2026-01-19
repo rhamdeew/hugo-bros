@@ -2,10 +2,11 @@
   import { Calendar, Tag, Trash2, Copy } from 'lucide-svelte';
   import { convertFileSrc } from '@tauri-apps/api/core';
   import { backend } from '$lib/services/backend';
-  import type { Post } from '$lib/types';
+  import type { FrontmatterConfig, Post } from '$lib/types';
 
   interface Props {
     post: Post;
+    frontmatterConfig?: FrontmatterConfig;
     onDelete?: () => void;
     onDuplicate?: () => void;
     onClick?: () => void;
@@ -13,6 +14,7 @@
 
   let {
     post,
+    frontmatterConfig,
     onDelete,
     onDuplicate,
     onClick
@@ -46,8 +48,41 @@
     return convertFileSrc(`${projectPath}/source${url}`);
   };
 
+  const getCustomFieldString = (name: string) => {
+    const value = post.frontmatter.customFields?.[name];
+    return typeof value === 'string' ? value : '';
+  };
+
+  const getCustomImageAlt = (imageFieldName: string) => {
+    const altCandidates = [`${imageFieldName}_alt`, `${imageFieldName}Alt`];
+    for (const candidate of altCandidates) {
+      const value = getCustomFieldString(candidate);
+      if (value) return value;
+    }
+    return post.title;
+  };
+
   let previewText = $derived(truncateText(post.content.replace(/<[^>]*>/g, ''), 150));
-  let imageUrl = $derived(resolveImageUrl(post.frontmatter.listImage || post.frontmatter.mainImage));
+  let imageFieldNames = $derived(
+    (frontmatterConfig?.customFields || [])
+      .filter((field) => field.type === 'image')
+      .map((field) => field.name)
+  );
+  let preferredImageField = $derived(frontmatterConfig?.previewImageField || '');
+  let preferredImageValue = $derived(
+    preferredImageField ? getCustomFieldString(preferredImageField) : ''
+  );
+  let selectedImageField = $derived(
+    preferredImageValue
+      ? preferredImageField
+      : imageFieldNames.find((name) => getCustomFieldString(name)) || ''
+  );
+  let imageUrl = $derived(
+    resolveImageUrl(selectedImageField ? getCustomFieldString(selectedImageField) : '')
+  );
+  let imageAlt = $derived(
+    selectedImageField ? getCustomImageAlt(selectedImageField) : post.title
+  );
   let displayTags = $derived(post.frontmatter.tags?.slice(0, 3) || []);
 </script>
 
@@ -67,7 +102,7 @@
   <!-- Image -->
   {#if imageUrl}
     <div class="post-image">
-      <img src={imageUrl} alt={post.frontmatter.listImageAlt || post.frontmatter.mainImageAlt || post.title} />
+      <img src={imageUrl} alt={imageAlt} />
     </div>
   {:else}
     <div class="post-image placeholder">

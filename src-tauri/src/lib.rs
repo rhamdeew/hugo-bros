@@ -3,6 +3,7 @@
 mod commands;
 mod config;
 mod files;
+mod frontmatter_config;
 mod hexo;
 mod markdown;
 
@@ -16,6 +17,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             select_project_folder,
             get_project_config,
+            get_frontmatter_config,
             list_posts,
             get_post,
             save_post,

@@ -1,17 +1,13 @@
 <script lang="ts">
-  import { ChevronDown, ChevronUp, Plus, X, Image as ImageIcon } from 'lucide-svelte';
+  import { ChevronDown, ChevronUp, Plus, X } from 'lucide-svelte';
   import type { Frontmatter } from '$lib/types';
 
   interface Props {
     frontmatter: Frontmatter;
-    onSelectListImage?: () => void;
-    onSelectMainImage?: () => void;
   }
 
   let {
-    frontmatter = $bindable(),
-    onSelectListImage,
-    onSelectMainImage
+    frontmatter = $bindable()
   }: Props = $props();
   let isOpen = $state(true);
 
@@ -102,6 +98,17 @@
           type="datetime-local"
           class="field-input"
           bind:value={frontmatter.date}
+        />
+      </div>
+
+      <!-- Updated -->
+      <div class="field-group">
+        <label for="updated" class="field-label">Updated</label>
+        <input
+          id="updated"
+          type="datetime-local"
+          class="field-input"
+          bind:value={frontmatter.updated}
         />
       </div>
 
@@ -209,82 +216,25 @@
         <span class="field-hint">Custom URL path for this post</span>
       </div>
 
-      <!-- List Image -->
+      <!-- Layout -->
       <div class="field-group">
-        <label for="listImage" class="field-label">List Image</label>
-        <div class="image-field-group">
-          <input
-            id="listImage"
-            type="text"
-            class="field-input"
-            bind:value={frontmatter.listImage}
-            placeholder="/images/my-image.jpg"
-          />
-          <button
-            class="image-select-btn"
-            type="button"
-            title="Select from gallery"
-            onclick={onSelectListImage}
-          >
-            <ImageIcon size={18} />
-          </button>
-        </div>
-        {#if frontmatter.listImage}
-          <div class="image-preview">
-            <img src={frontmatter.listImage} alt="List image preview" />
-          </div>
-        {/if}
-      </div>
-
-      <!-- List Image Alt -->
-      <div class="field-group">
-        <label for="listImageAlt" class="field-label">List Image Alt</label>
+        <label for="layout" class="field-label">Layout</label>
         <input
-          id="listImageAlt"
+          id="layout"
           type="text"
           class="field-input"
-          bind:value={frontmatter.listImageAlt}
-          placeholder="Image description for accessibility"
+          bind:value={frontmatter.layout}
+          placeholder="post"
         />
       </div>
 
-      <!-- Main Image -->
+      <!-- Comments -->
       <div class="field-group">
-        <label for="mainImage" class="field-label">Main Image</label>
-        <div class="image-field-group">
-          <input
-            id="mainImage"
-            type="text"
-            class="field-input"
-            bind:value={frontmatter.mainImage}
-            placeholder="/images/my-image.jpg"
-          />
-          <button
-            class="image-select-btn"
-            type="button"
-            title="Select from gallery"
-            onclick={onSelectMainImage}
-          >
-            <ImageIcon size={18} />
-          </button>
-        </div>
-        {#if frontmatter.mainImage}
-          <div class="image-preview">
-            <img src={frontmatter.mainImage} alt="Main image preview" />
-          </div>
-        {/if}
-      </div>
-
-      <!-- Main Image Alt -->
-      <div class="field-group">
-        <label for="mainImageAlt" class="field-label">Main Image Alt</label>
-        <input
-          id="mainImageAlt"
-          type="text"
-          class="field-input"
-          bind:value={frontmatter.mainImageAlt}
-          placeholder="Image description for accessibility"
-        />
+        <label class="field-label">Comments</label>
+        <label class="checkbox-label">
+          <input type="checkbox" bind:checked={frontmatter.comments} />
+          <span>Allow comments</span>
+        </label>
       </div>
 
       <!-- Custom Fields -->
@@ -457,6 +407,18 @@
   :global(.dark .field-textarea) {
     background-color: #404040;
     border-color: #525252;
+    color: #f5f5f5;
+  }
+
+  .checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+    color: #1a1a1a;
+  }
+
+  :global(.dark .checkbox-label) {
     color: #f5f5f5;
   }
 

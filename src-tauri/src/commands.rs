@@ -2,6 +2,7 @@
 
 use crate::hexo::HexoProject;
 use crate::markdown::{Draft, ImageInfo, Page, Post};
+use crate::frontmatter_config::{load_frontmatter_config, FrontmatterConfig};
 use std::fs;
 use std::path::{Path, PathBuf};
 use tauri::command;
@@ -69,6 +70,11 @@ pub fn get_project_config(project_path: String) -> Result<HexoConfig, String> {
         .map_err(|e| format!("Failed to parse config: {}", e))?;
 
     Ok(config)
+}
+
+#[command]
+pub fn get_frontmatter_config(project_path: String) -> Result<FrontmatterConfig, String> {
+    load_frontmatter_config(Path::new(&project_path))
 }
 
 // ====================
@@ -175,12 +181,11 @@ pub fn create_post(project_path: String, title: String) -> Result<Post, String> 
         date: date_str,
         tags: Vec::new(),
         categories: Vec::new(),
+        updated: None,
+        comments: None,
+        layout: None,
         description: None,
         permalink: None,
-        list_image: None,
-        list_image_alt: None,
-        main_image: None,
-        main_image_alt: None,
         custom_fields: Default::default(),
     };
 
@@ -301,12 +306,11 @@ pub fn create_page(project_path: String, title: String) -> Result<Page, String> 
         date: date_str,
         tags: Vec::new(),
         categories: Vec::new(),
+        updated: None,
+        comments: None,
+        layout: None,
         description: None,
         permalink: None,
-        list_image: None,
-        list_image_alt: None,
-        main_image: None,
-        main_image_alt: None,
         custom_fields: Default::default(),
     };
 
@@ -393,12 +397,11 @@ pub fn create_draft(project_path: String, title: String) -> Result<Draft, String
         date: date_str,
         tags: Vec::new(),
         categories: Vec::new(),
+        updated: None,
+        comments: None,
+        layout: None,
         description: None,
         permalink: None,
-        list_image: None,
-        list_image_alt: None,
-        main_image: None,
-        main_image_alt: None,
         custom_fields: Default::default(),
     };
 

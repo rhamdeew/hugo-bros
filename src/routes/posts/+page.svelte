@@ -4,12 +4,13 @@
   import { confirm, message } from '@tauri-apps/plugin-dialog';
   import { backend } from '$lib/services/backend';
   import { PostList, ImageGallery, HexoControls } from '$lib/components';
-  import type { Post, Page, Draft, ImageInfo } from '$lib/types';
+  import type { Post, Page, Draft, ImageInfo, FrontmatterConfig } from '$lib/types';
 
   let posts: Post[] = $state([]);
   let pages: Page[] = $state([]);
   let drafts: Draft[] = $state([]);
   let images: ImageInfo[] = $state([]);
+  let frontmatterConfig = $state<FrontmatterConfig | null>(null);
   let activeTab = $state<'posts' | 'pages' | 'drafts'>('posts');
   let loading = $state(true);
   let error = $state<string | null>(null);
@@ -18,12 +19,21 @@
   let newPostTitle = $state('');
   let createError = $state<string | null>(null);
   let pendingImageField:
-    | { field: 'listImage' | 'mainImage'; post: Post }
+    | { fieldName: string; post: Post }
     | null = null;
   let createKind = $derived(
     activeTab === 'pages' ? 'Page' :
     activeTab === 'drafts' ? 'Draft' :
     'Post'
+  );
+  let previewImageWarning = $derived(
+    frontmatterConfig?.previewImageField
+      ? frontmatterConfig.customFields?.some(
+          (field) => field.name === frontmatterConfig.previewImageField
+        )
+        ? ''
+        : `Preview image field "${frontmatterConfig.previewImageField}" not found in customFields.`
+      : ''
   );
 
   // Get current items based on active tab
@@ -49,17 +59,19 @@
         return;
       }
 
-      const [postsData, pagesData, draftsData, imagesData] = await Promise.all([
+      const [postsData, pagesData, draftsData, imagesData, frontmatterConfigData] = await Promise.all([
         backend.listPosts(),
         backend.listPages(),
         backend.listDrafts(),
         backend.listImages(),
+        backend.getFrontmatterConfig(),
       ]);
 
       posts = postsData;
       pages = pagesData;
       drafts = draftsData;
       images = imagesData;
+      frontmatterConfig = frontmatterConfigData;
     } catch (err) {
       console.error('Failed to load data:', err);
       error = err instanceof Error ? err.message : 'Failed to load data';
@@ -189,13 +201,10 @@
   function handleImageSelect(image: ImageInfo) {
     // This will be called when an image is selected from gallery
     if (pendingImageField) {
-      const { field, post } = pendingImageField;
+      const { fieldName, post } = pendingImageField;
       // Update the post's frontmatter
-      if (field === 'listImage') {
-        post.frontmatter.listImage = image.url;
-      } else if (field === 'mainImage') {
-        post.frontmatter.mainImage = image.url;
-      }
+      post.frontmatter.customFields = post.frontmatter.customFields || {};
+      post.frontmatter.customFields[fieldName] = image.url;
       pendingImageField = null;
     }
   }
@@ -234,8 +243,8 @@
     input.click();
   }
 
-  function openImageGalleryForPost(field: 'listImage' | 'mainImage', post: Post) {
-    pendingImageField = { field, post };
+  function openImageGalleryForPost(fieldName: string, post: Post) {
+    pendingImageField = { fieldName, post };
     showImageGallery = true;
   }
 </script>
@@ -298,12 +307,18 @@
         </button>
       </div>
     {:else}
+      {#if previewImageWarning}
+        <div class="warning-banner">
+          {previewImageWarning}
+        </div>
+      {/if}
       <PostList
         posts={currentItems}
         activeTab={activeTab}
         postsCount={posts.length}
         pagesCount={pages.length}
         draftsCount={drafts.length}
+        frontmatterConfig={frontmatterConfig ?? undefined}
         onCreate={handleCreatePost}
         onEdit={(item) => handleEdit(
           item,
@@ -604,6 +619,22 @@
     flex: 1;
     padding: 2rem;
     overflow-y: auto;
+  }
+
+  .warning-banner {
+    padding: 0.75rem 1rem;
+    margin-bottom: 1rem;
+    border-radius: 0.5rem;
+    border: 1px solid #facc15;
+    background-color: #fef9c3;
+    color: #92400e;
+    font-size: 0.875rem;
+  }
+
+  :global(.dark .warning-banner) {
+    border-color: #eab308;
+    background-color: #422006;
+    color: #fef08a;
   }
 
   /* Loading State */
