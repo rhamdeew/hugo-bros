@@ -1,15 +1,15 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { Plus, FolderOpen, X } from 'lucide-svelte';
+  import { Plus, FolderOpen, X, ArrowLeft } from 'lucide-svelte';
+  import { goto } from '$app/navigation';
   import { confirm, message } from '@tauri-apps/plugin-dialog';
   import { backend } from '$lib/services/backend';
-  import { PostList, ImageGallery, HexoControls } from '$lib/components';
-  import type { Post, Page, Draft, ImageInfo, FrontmatterConfig } from '$lib/types';
+  import { PostList, ImageGallery, HugoControls } from '$lib/components';
+  import type { Post, Page, Draft, StaticEntry, FrontmatterConfig } from '$lib/types';
 
   let posts: Post[] = $state([]);
   let pages: Page[] = $state([]);
   let drafts: Draft[] = $state([]);
-  let images: ImageInfo[] = $state([]);
   let frontmatterConfig = $state<FrontmatterConfig | null>(null);
   let activeTab = $state<'posts' | 'pages' | 'drafts'>('posts');
   let loading = $state(true);
@@ -60,18 +60,16 @@
         return;
       }
 
-      const [postsData, pagesData, draftsData, imagesData, frontmatterConfigData] = await Promise.all([
+      const [postsData, pagesData, draftsData, frontmatterConfigData] = await Promise.all([
         backend.listPosts(),
         backend.listPages(),
         backend.listDrafts(),
-        backend.listImages(),
         backend.getFrontmatterConfig(),
       ]);
 
       posts = postsData;
       pages = pagesData;
       drafts = draftsData;
-      images = imagesData;
       frontmatterConfig = frontmatterConfigData;
     } catch (err) {
       console.error('Failed to load data:', err);
@@ -117,7 +115,7 @@
       console.error('Failed to create item:', err);
       createError = err instanceof Error ? err.message : 'Unknown error';
       await message(`Failed to create ${createKind.toLowerCase()}: ` + createError, {
-        title: 'Hex Tool',
+        title: 'Hugo Bros',
         kind: 'error'
       });
     }
@@ -134,7 +132,7 @@
   async function handleDeletePost(post: Post) {
     try {
       const shouldDelete = await confirm(`Delete "${post.title}"?`, {
-        title: 'Hex Tool',
+        title: 'Hugo Bros',
         kind: 'warning'
       });
       if (!shouldDelete) return;
@@ -145,7 +143,7 @@
     } catch (err) {
       console.error('Failed to delete post:', err);
       await message('Failed to delete post: ' + (err instanceof Error ? err.message : 'Unknown error'), {
-        title: 'Hex Tool',
+        title: 'Hugo Bros',
         kind: 'error'
       });
     }
@@ -154,7 +152,7 @@
   async function handleDeletePage(page: Page) {
     try {
       const shouldDelete = await confirm(`Delete "${page.title}"?`, {
-        title: 'Hex Tool',
+        title: 'Hugo Bros',
         kind: 'warning'
       });
       if (!shouldDelete) return;
@@ -164,7 +162,7 @@
     } catch (err) {
       console.error('Failed to delete page:', err);
       await message('Failed to delete page: ' + (err instanceof Error ? err.message : 'Unknown error'), {
-        title: 'Hex Tool',
+        title: 'Hugo Bros',
         kind: 'error'
       });
     }
@@ -173,7 +171,7 @@
   async function handleDeleteDraft(draft: Draft) {
     try {
       const shouldDelete = await confirm(`Delete "${draft.title}"?`, {
-        title: 'Hex Tool',
+        title: 'Hugo Bros',
         kind: 'warning'
       });
       if (!shouldDelete) return;
@@ -183,7 +181,7 @@
     } catch (err) {
       console.error('Failed to delete draft:', err);
       await message('Failed to delete draft: ' + (err instanceof Error ? err.message : 'Unknown error'), {
-        title: 'Hex Tool',
+        title: 'Hugo Bros',
         kind: 'error'
       });
     }
@@ -199,49 +197,20 @@
     }
   }
 
-  function handleImageSelect(image: ImageInfo) {
+  function goToStart() {
+    goto('/');
+  }
+
+  function handleImageSelect(entry: StaticEntry) {
     // This will be called when an image is selected from gallery
     if (pendingImageField) {
+      if (!entry.url) return;
       const { fieldName, post } = pendingImageField;
       // Update the post's frontmatter
       post.frontmatter.customFields = post.frontmatter.customFields || {};
-      post.frontmatter.customFields[fieldName] = image.url;
+      post.frontmatter.customFields[fieldName] = entry.url;
       pendingImageField = null;
     }
-  }
-
-  function handleImageDelete(image: ImageInfo) {
-    // Delete image and reload
-    backend.deleteImage(image.path).then(() => {
-      images = images.filter((img) => img.fullPath !== image.fullPath);
-    });
-  }
-
-  function handleUploadImage() {
-    // Trigger file upload dialog
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'image/*';
-
-    input.onchange = async (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
-      if (!file) return;
-
-      try {
-        // In Tauri, file.path should be available
-        // @ts-ignore - Tauri-specific property
-        const sourcePath = file.path || file.name;
-        const imageUrl = await backend.copyImageToProject(sourcePath);
-
-        // Reload images
-        images = await backend.listImages();
-      } catch (err) {
-        console.error('Failed to upload image:', err);
-        alert('Failed to upload image: ' + (err instanceof Error ? err.message : 'Unknown error'));
-      }
-    };
-
-    input.click();
   }
 
   function openImageGalleryForPost(fieldName: string, post: Post) {
@@ -256,14 +225,14 @@
     try {
       frontmatterConfig = await backend.generateFrontmatterConfig();
       await message('Frontmatter config generated successfully.', {
-        title: 'Hex Tool'
+        title: 'Hugo Bros'
       });
     } catch (err) {
       console.error('Failed to generate frontmatter config:', err);
       await message(
         'Failed to generate frontmatter config: ' +
           (err instanceof Error ? err.message : 'Unknown error'),
-        { title: 'Hex Tool', kind: 'error' }
+        { title: 'Hugo Bros', kind: 'error' }
       );
     } finally {
       isGeneratingFrontmatterConfig = false;
@@ -276,7 +245,7 @@
   <header class="page-header">
     <div class="header-left">
       <h1 class="page-title">Posts</h1>
-      <p class="page-subtitle">Manage your Hexo blog posts</p>
+      <p class="page-subtitle">Manage your Hugo site content</p>
     </div>
 
     <div class="header-right">
@@ -286,6 +255,10 @@
           <span>Select Project</span>
         </button>
       {:else}
+        <button class="back-btn" onclick={goToStart} type="button">
+          <ArrowLeft size={18} />
+          <span>Back to Start Screen</span>
+        </button>
         <button class="create-btn" onclick={handleCreatePost} type="button">
           <Plus size={18} />
           <span>New Post</span>
@@ -294,10 +267,10 @@
     </div>
   </header>
 
-  <!-- Hexo Controls (shown when project is selected) -->
+  <!-- Hugo Controls (shown when project is selected) -->
   {#if backend.getProjectPath()}
-    <div class="hexo-controls-wrapper">
-      <HexoControls />
+    <div class="hugo-controls-wrapper">
+      <HugoControls />
     </div>
   {/if}
 
@@ -397,10 +370,7 @@
   <!-- Image Gallery Modal -->
   <ImageGallery
     bind:open={showImageGallery}
-    {images}
     onSelect={handleImageSelect}
-    onDelete={handleImageDelete}
-    onUpload={handleUploadImage}
   />
 
   <!-- New Post Modal -->
@@ -618,15 +588,47 @@
   .header-right {
     display: flex;
     gap: 0.75rem;
+    align-items: center;
   }
 
-  .hexo-controls-wrapper {
+  .back-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.625rem 1rem;
+    background-color: #ffffff;
+    color: #1f2937;
+    border: 1px solid #d1d5db;
+    border-radius: 0.375rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .back-btn:hover {
+    background-color: #f3f4f6;
+    border-color: #9ca3af;
+  }
+
+  :global(.dark .back-btn) {
+    background-color: #2d2d2d;
+    color: #e5e7eb;
+    border-color: #404040;
+  }
+
+  :global(.dark .back-btn:hover) {
+    background-color: #3d3d3d;
+    border-color: #525252;
+  }
+
+  .hugo-controls-wrapper {
     padding: 1rem 2rem;
     background-color: #ffffff;
     border-bottom: 1px solid #e5e5e5;
   }
 
-  :global(.dark .hexo-controls-wrapper) {
+  :global(.dark .hugo-controls-wrapper) {
     background-color: #2d2d2d;
     border-bottom-color: #404040;
   }

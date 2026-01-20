@@ -1,10 +1,10 @@
-// Hexo Blog Editor - Tauri Backend
+// Hugo Bros - Tauri Backend
 
 mod commands;
 mod config;
 mod files;
 mod frontmatter_config;
-mod hexo;
+mod hugo;
 mod markdown;
 
 use commands::*;
@@ -35,14 +35,17 @@ pub fn run() {
             save_draft,
             delete_draft,
             list_images,
+            list_static_entries,
+            create_static_folder,
+            delete_static_entry,
             copy_image_to_project,
             delete_image,
             get_app_config,
             save_app_config,
-            run_hexo_command,
-            start_hexo_server,
-            stop_hexo_server,
-            is_hexo_server_running,
+            run_hugo_command,
+            start_hugo_server,
+            stop_hugo_server,
+            is_hugo_server_running,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

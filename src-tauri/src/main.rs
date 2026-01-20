@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    hex_tool_lib::run()
+    hugo_bros_lib::run()
 }

@@ -237,6 +237,15 @@
         </label>
       </div>
 
+      <!-- Draft -->
+      <div class="field-group">
+        <label class="field-label">Draft</label>
+        <label class="checkbox-label">
+          <input type="checkbox" bind:checked={frontmatter.draft} />
+          <span>Mark as draft</span>
+        </label>
+      </div>
+
       <!-- Custom Fields -->
       <div class="field-group">
         <label class="field-label">Custom Fields</label>

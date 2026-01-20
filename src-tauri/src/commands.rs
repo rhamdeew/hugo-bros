@@ -1,12 +1,12 @@
 // Tauri commands for frontend-backend communication
 
-use crate::hexo::HexoProject;
+use crate::hugo::HugoProject;
 use crate::markdown::{Draft, ImageInfo, Page, Post};
 use crate::frontmatter_config::{
     generate_frontmatter_config, load_frontmatter_config, FrontmatterConfig,
 };
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use tauri::command;
 use tauri::AppHandle;
 
@@ -21,7 +21,7 @@ pub async fn select_project_folder(app: AppHandle) -> Result<String, String> {
     // Open folder picker dialog
     let folder_path = app.dialog()
         .file()
-        .set_title("Select Hexo Project Folder")
+        .set_title("Select Hugo Project Folder")
         .blocking_pick_folder();
 
     if let Some(path) = folder_path {
@@ -29,8 +29,8 @@ pub async fn select_project_folder(app: AppHandle) -> Result<String, String> {
         let path_buf = PathBuf::from(path.to_string());
         let path_string = path_buf.to_string_lossy().to_string();
 
-        // Validate it's a Hexo project
-        let project = HexoProject::new(path_buf);
+        // Validate it's a Hugo project
+        let project = HugoProject::new(path_buf);
         match project.validate() {
             Ok(_) => {
                 // Add to recent projects
@@ -44,11 +44,11 @@ pub async fn select_project_folder(app: AppHandle) -> Result<String, String> {
             Err(e) => {
                 // Show error dialog to user
                 app.dialog()
-                    .message(format!("Invalid Hexo project: {}", e))
+                    .message(format!("Invalid Hugo project: {}", e))
                     .kind(MessageDialogKind::Error)
                     .title("Invalid Project")
                     .blocking_show();
-                Err(format!("Invalid Hexo project: {}", e))
+                Err(format!("Invalid Hugo project: {}", e))
             }
         }
     } else {
@@ -57,21 +57,17 @@ pub async fn select_project_folder(app: AppHandle) -> Result<String, String> {
 }
 
 #[command]
-pub fn get_project_config(project_path: String) -> Result<HexoConfig, String> {
-    let config_path = Path::new(&project_path).join("_config.yml");
-
-    if !config_path.exists() {
-        return Err("_config.yml not found".to_string());
-    }
+pub fn get_project_config(project_path: String) -> Result<HugoConfig, String> {
+    let project = HugoProject::new(PathBuf::from(&project_path));
+    let config_path = project
+        .find_config_path()
+        .ok_or("Hugo config not found (config.* or hugo.*)".to_string())?;
 
     let content = fs::read_to_string(&config_path)
         .map_err(|e| format!("Failed to read config: {}", e))?;
 
-    // Parse YAML config
-    let config: HexoConfig = serde_yaml::from_str(&content)
-        .map_err(|e| format!("Failed to parse config: {}", e))?;
-
-    Ok(config)
+    let config_value = parse_hugo_config(&config_path, &content)?;
+    Ok(HugoConfig::from_value(config_value))
 }
 
 #[command]
@@ -82,7 +78,7 @@ pub fn get_frontmatter_config(project_path: String) -> Result<FrontmatterConfig,
 #[command]
 pub fn generate_frontmatter_config_command(project_path: String) -> Result<FrontmatterConfig, String> {
     let config_path = Path::new(&project_path)
-        .join(".hex-tool")
+        .join(".hugo-bros")
         .join("frontmatter-config.json");
 
     if config_path.exists() {
@@ -93,7 +89,7 @@ pub fn generate_frontmatter_config_command(project_path: String) -> Result<Front
 
     if let Some(parent) = config_path.parent() {
         fs::create_dir_all(parent)
-            .map_err(|e| format!("Failed to create .hex-tool directory: {}", e))?;
+            .map_err(|e| format!("Failed to create .hugo-bros directory: {}", e))?;
     }
 
     let content = serde_json::to_string_pretty(&config)
@@ -110,8 +106,9 @@ pub fn generate_frontmatter_config_command(project_path: String) -> Result<Front
 
 #[command]
 pub fn list_posts(project_path: String) -> Result<Vec<Post>, String> {
-    let project = HexoProject::new(PathBuf::from(&project_path));
+    let project = HugoProject::new(PathBuf::from(&project_path));
     let posts_dir = project.get_posts_dir();
+    let drafts_dir = project.get_content_dir().join("drafts");
 
     if !posts_dir.exists() {
         return Ok(Vec::new());
@@ -120,14 +117,25 @@ pub fn list_posts(project_path: String) -> Result<Vec<Post>, String> {
     let mut posts = Vec::new();
 
     for entry in walkdir::WalkDir::new(&posts_dir)
-        .max_depth(1)
+        .max_depth(4)
         .into_iter()
         .filter_map(|e| e.ok())
     {
         let path = entry.path();
         if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("md") {
+            if path.file_name().and_then(|s| s.to_str()) == Some("_index.md") {
+                continue;
+            }
+            if drafts_dir.exists() && path.starts_with(&drafts_dir) {
+                continue;
+            }
             match Post::from_file(path, Path::new(&project_path)) {
-                Ok(post) => posts.push(post),
+                Ok(post) => {
+                    if post.frontmatter.draft.unwrap_or(false) {
+                        continue;
+                    }
+                    posts.push(post);
+                },
                 Err(e) => eprintln!("Failed to parse post {:?}: {}", path, e),
             }
         }
@@ -187,7 +195,7 @@ pub fn save_page(_project_path: String, page: Page) -> Result<(), String> {
 
 #[command]
 pub fn create_post(project_path: String, title: String) -> Result<Post, String> {
-    let project = HexoProject::new(PathBuf::from(&project_path));
+    let project = HugoProject::new(PathBuf::from(&project_path));
     let posts_dir = project.get_posts_dir();
 
     // Create posts directory if it doesn't exist
@@ -200,7 +208,7 @@ pub fn create_post(project_path: String, title: String) -> Result<Post, String> 
 
     // Get current time in ISO 8601 format
     let now = chrono::Local::now();
-    let date_str = now.format("%Y-%m-%d %H:%M:%S").to_string();
+    let date_str = now.to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
 
     // Create default frontmatter
     let frontmatter = crate::markdown::Frontmatter {
@@ -213,6 +221,7 @@ pub fn create_post(project_path: String, title: String) -> Result<Post, String> 
         layout: None,
         description: None,
         permalink: None,
+        draft: None,
         custom_fields: Default::default(),
     };
 
@@ -275,13 +284,16 @@ pub fn delete_page(project_path: String, page_id: String) -> Result<(), String> 
     }
 
     if let Some(parent) = file_path.parent() {
-        if parent.file_name().and_then(|s| s.to_str()) == Some("source") {
-            return Err("Refusing to delete project source root".to_string());
+        if parent.file_name().and_then(|s| s.to_str()) == Some("content") {
+            return Err("Refusing to delete content root".to_string());
         }
-        if parent.ends_with("_posts") || parent.ends_with("_drafts") {
+        if parent.ends_with("posts") || parent.ends_with("drafts") {
             return Err("Invalid page path".to_string());
         }
-        if file_path.file_name().and_then(|s| s.to_str()) == Some("index.md") {
+        if matches!(
+            file_path.file_name().and_then(|s| s.to_str()),
+            Some("index.md") | Some("_index.md")
+        ) {
             fs::remove_file(&file_path)
                 .map_err(|e| format!("Failed to delete page: {}", e))?;
             if fs::read_dir(parent).map(|mut i| i.next().is_none()).unwrap_or(false) {
@@ -303,7 +315,7 @@ pub fn delete_page(project_path: String, page_id: String) -> Result<(), String> 
 
 #[command]
 pub fn create_page(project_path: String, title: String) -> Result<Page, String> {
-    let project = HexoProject::new(PathBuf::from(&project_path));
+    let project = HugoProject::new(PathBuf::from(&project_path));
     let pages_dir = project.get_pages_dir();
 
     fs::create_dir_all(&pages_dir)
@@ -326,7 +338,7 @@ pub fn create_page(project_path: String, title: String) -> Result<Page, String> 
     let file_path = page_dir.join("index.md");
 
     let now = chrono::Local::now();
-    let date_str = now.format("%Y-%m-%d %H:%M:%S").to_string();
+    let date_str = now.to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
 
     let frontmatter = crate::markdown::Frontmatter {
         title: title.clone(),
@@ -338,6 +350,7 @@ pub fn create_page(project_path: String, title: String) -> Result<Page, String> 
         layout: None,
         description: None,
         permalink: None,
+        draft: None,
         custom_fields: Default::default(),
     };
 
@@ -353,8 +366,11 @@ pub fn create_page(project_path: String, title: String) -> Result<Page, String> 
 
 #[command]
 pub fn list_pages(project_path: String) -> Result<Vec<Page>, String> {
-    let project = HexoProject::new(PathBuf::from(&project_path));
+    let project = HugoProject::new(PathBuf::from(&project_path));
     let pages_dir = project.get_pages_dir();
+    let posts_dir = project.get_posts_dir();
+    let drafts_dir = project.get_content_dir().join("drafts");
+    let should_skip_posts = posts_dir != pages_dir;
 
     if !pages_dir.exists() {
         return Ok(Vec::new());
@@ -362,27 +378,34 @@ pub fn list_pages(project_path: String) -> Result<Vec<Page>, String> {
 
     let mut pages = Vec::new();
 
-    // Look for index.md files in subdirectories of source/
+    // Look for index.md/_index.md files and standalone pages in content/
     for entry in walkdir::WalkDir::new(&pages_dir)
-        .max_depth(2)
+        .max_depth(4)
         .into_iter()
         .filter_map(|e| e.ok())
     {
         let path = entry.path();
-        if path.is_file() && path.file_name().and_then(|s| s.to_str()) == Some("index.md") {
-            // Skip _posts and _drafts
-            if let Some(parent) = path.parent() {
-                if let Some(folder_name) = parent.file_name() {
-                    if folder_name == "_posts" || folder_name == "_drafts" {
-                        continue;
-                    }
-                }
-            }
+        if !path.is_file() || path.extension().and_then(|s| s.to_str()) != Some("md") {
+            continue;
+        }
+        if (should_skip_posts && path.starts_with(&posts_dir)) || path.starts_with(&drafts_dir) {
+            continue;
+        }
+        let filename = path.file_name().and_then(|s| s.to_str());
+        let is_index = matches!(filename, Some("index.md") | Some("_index.md"));
+        let is_root_page = path.parent() == Some(pages_dir.as_path());
+        if !is_index && !is_root_page {
+            continue;
+        }
 
-            match Page::from_file(path, Path::new(&project_path)) {
-                Ok(page) => pages.push(page),
-                Err(e) => eprintln!("Failed to parse page: {}", e),
-            }
+        match Page::from_file(path, Path::new(&project_path)) {
+            Ok(page) => {
+                if page.frontmatter.draft.unwrap_or(false) {
+                    continue;
+                }
+                pages.push(page);
+            },
+            Err(e) => eprintln!("Failed to parse page: {}", e),
         }
     }
 
@@ -397,8 +420,8 @@ pub fn list_pages(project_path: String) -> Result<Vec<Page>, String> {
 
 #[command]
 pub fn create_draft(project_path: String, title: String) -> Result<Draft, String> {
-    let project = HexoProject::new(PathBuf::from(&project_path));
-    let drafts_dir = project.path.join("source").join("_drafts");
+    let project = HugoProject::new(PathBuf::from(&project_path));
+    let drafts_dir = project.get_content_dir().join("drafts");
 
     fs::create_dir_all(&drafts_dir)
         .map_err(|e| format!("Failed to create drafts directory: {}", e))?;
@@ -417,7 +440,7 @@ pub fn create_draft(project_path: String, title: String) -> Result<Draft, String
     };
 
     let now = chrono::Local::now();
-    let date_str = now.format("%Y-%m-%d %H:%M:%S").to_string();
+    let date_str = now.to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
 
     let frontmatter = crate::markdown::Frontmatter {
         title: title.clone(),
@@ -429,6 +452,7 @@ pub fn create_draft(project_path: String, title: String) -> Result<Draft, String
         layout: None,
         description: None,
         permalink: None,
+        draft: Some(true),
         custom_fields: Default::default(),
     };
 
@@ -458,24 +482,30 @@ pub fn delete_draft(project_path: String, draft_id: String) -> Result<(), String
 
 #[command]
 pub fn list_drafts(project_path: String) -> Result<Vec<Draft>, String> {
-    let project = HexoProject::new(PathBuf::from(&project_path));
-    let drafts_dir = project.path.join("source").join("_drafts");
+    let project = HugoProject::new(PathBuf::from(&project_path));
+    let content_dir = project.get_content_dir();
+    let drafts_dir = content_dir.join("drafts");
 
-    if !drafts_dir.exists() {
+    if !content_dir.exists() {
         return Ok(Vec::new());
     }
 
     let mut drafts = Vec::new();
 
-    for entry in walkdir::WalkDir::new(&drafts_dir)
-        .max_depth(1)
+    for entry in walkdir::WalkDir::new(&content_dir)
+        .max_depth(4)
         .into_iter()
         .filter_map(|e| e.ok())
     {
         let path = entry.path();
         if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("md") {
+            let is_draft_path = drafts_dir.exists() && path.starts_with(&drafts_dir);
             match Draft::from_file(path, Path::new(&project_path)) {
-                Ok(draft) => drafts.push(draft),
+                Ok(draft) => {
+                    if draft.frontmatter.draft.unwrap_or(false) || is_draft_path {
+                        drafts.push(draft);
+                    }
+                },
                 Err(e) => eprintln!("Failed to parse draft: {}", e),
             }
         }
@@ -492,16 +522,16 @@ pub fn list_drafts(project_path: String) -> Result<Vec<Draft>, String> {
 
 #[command]
 pub fn list_images(project_path: String) -> Result<Vec<ImageInfo>, String> {
-    let project = HexoProject::new(PathBuf::from(&project_path));
-    let images_dir = project.get_images_dir();
+    let project = HugoProject::new(PathBuf::from(&project_path));
+    let static_dir = project.get_static_dir();
 
-    if !images_dir.exists() {
+    if !static_dir.exists() {
         return Ok(Vec::new());
     }
 
     let mut images = Vec::new();
 
-    for entry in walkdir::WalkDir::new(&images_dir)
+    for entry in walkdir::WalkDir::new(&static_dir)
         .max_depth(10) // Allow subdirectories in images
         .into_iter()
         .filter_map(|e| e.ok())
@@ -511,7 +541,7 @@ pub fn list_images(project_path: String) -> Result<Vec<ImageInfo>, String> {
         if path.is_file() {
             if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
                 if matches!(ext.to_lowercase().as_str(), "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" | "ico") {
-                    match create_image_info(path, &images_dir, Path::new(&project_path)) {
+                    match create_image_info(path, &static_dir, Path::new(&project_path)) {
                         Ok(img) => images.push(img),
                         Err(e) => eprintln!("Failed to read image {:?}: {}", path, e),
                     }
@@ -526,16 +556,175 @@ pub fn list_images(project_path: String) -> Result<Vec<ImageInfo>, String> {
 }
 
 #[command]
+pub fn list_static_entries(
+    project_path: String,
+    dir: Option<String>,
+) -> Result<Vec<StaticEntry>, String> {
+    let project = HugoProject::new(PathBuf::from(&project_path));
+    let static_dir = project.get_static_dir();
+
+    if !static_dir.exists() {
+        return Ok(Vec::new());
+    }
+
+    let relative_dir = dir.unwrap_or_default();
+    let relative_path = validate_relative_path(&relative_dir)?;
+    let target_dir = static_dir.join(&relative_path);
+
+    if !target_dir.exists() {
+        return Err("Directory not found".to_string());
+    }
+    if !target_dir.is_dir() {
+        return Err("Not a directory".to_string());
+    }
+
+    let mut entries = Vec::new();
+    for entry in fs::read_dir(&target_dir).map_err(|e| format!("Failed to read directory: {}", e))? {
+        let entry = entry.map_err(|e| format!("Failed to read directory entry: {}", e))?;
+        let path = entry.path();
+        let name = entry
+            .file_name()
+            .to_string_lossy()
+            .to_string();
+
+        if path.is_dir() {
+            let (created_at, modified_at) = file_times(&path)?;
+            let relative_path = path
+                .strip_prefix(&static_dir)
+                .ok()
+                .and_then(|p| p.to_str())
+                .unwrap_or("")
+                .to_string();
+            entries.push(StaticEntry {
+                name,
+                path: relative_path.replace('\\', "/"),
+                kind: "dir".to_string(),
+                size: 0,
+                created_at,
+                modified_at,
+                url: None,
+                full_path: path.to_string_lossy().to_string(),
+            });
+            continue;
+        }
+
+        if path.is_file() {
+            if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
+                if !matches!(ext.to_lowercase().as_str(), "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" | "ico") {
+                    continue;
+                }
+            } else {
+                continue;
+            }
+
+            let (created_at, modified_at) = file_times(&path)?;
+            let size = fs::metadata(&path)
+                .map(|m| m.len())
+                .unwrap_or(0);
+            let relative_path = path
+                .strip_prefix(&static_dir)
+                .ok()
+                .and_then(|p| p.to_str())
+                .unwrap_or("")
+                .to_string();
+            let url = format!("/{}", relative_path.replace('\\', "/"));
+            entries.push(StaticEntry {
+                name,
+                path: relative_path.replace('\\', "/"),
+                kind: "file".to_string(),
+                size,
+                created_at,
+                modified_at,
+                url: Some(url),
+                full_path: path.to_string_lossy().to_string(),
+            });
+        }
+    }
+
+    entries.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    Ok(entries)
+}
+
+#[command]
+pub fn create_static_folder(
+    project_path: String,
+    parent_dir: Option<String>,
+    name: String,
+) -> Result<String, String> {
+    let project = HugoProject::new(PathBuf::from(&project_path));
+    let static_dir = project.get_static_dir();
+
+    if !static_dir.exists() {
+        fs::create_dir_all(&static_dir)
+            .map_err(|e| format!("Failed to create static directory: {}", e))?;
+    }
+
+    let trimmed_name = name.trim();
+    validate_folder_name(trimmed_name)?;
+    let relative_parent = validate_relative_path(parent_dir.as_deref().unwrap_or(""))?;
+    let target_dir = static_dir.join(&relative_parent).join(trimmed_name);
+
+    if target_dir.exists() {
+        return Err("Folder already exists".to_string());
+    }
+
+    fs::create_dir_all(&target_dir)
+        .map_err(|e| format!("Failed to create folder: {}", e))?;
+
+    let relative_path = target_dir
+        .strip_prefix(&static_dir)
+        .ok()
+        .and_then(|p| p.to_str())
+        .unwrap_or("")
+        .to_string();
+
+    Ok(relative_path.replace('\\', "/"))
+}
+
+#[command]
+pub fn delete_static_entry(project_path: String, relative_path: String) -> Result<(), String> {
+    let project = HugoProject::new(PathBuf::from(&project_path));
+    let static_dir = project.get_static_dir();
+    if relative_path.trim().is_empty() {
+        return Err("Refusing to delete static root".to_string());
+    }
+    let relative = validate_relative_path(&relative_path)?;
+    let target_path = static_dir.join(&relative);
+
+    if !target_path.exists() {
+        return Err("Entry not found".to_string());
+    }
+
+    if target_path.is_dir() {
+        fs::remove_dir_all(&target_path)
+            .map_err(|e| format!("Failed to delete folder: {}", e))?;
+    } else {
+        fs::remove_file(&target_path)
+            .map_err(|e| format!("Failed to delete file: {}", e))?;
+    }
+
+    Ok(())
+}
+
+#[command]
 pub fn copy_image_to_project(
     project_path: String,
     source_path: String,
+    target_dir: Option<String>,
 ) -> Result<String, String> {
-    let project = HexoProject::new(PathBuf::from(&project_path));
-    let images_dir = project.get_images_dir();
+    let project = HugoProject::new(PathBuf::from(&project_path));
+    let static_dir = project.get_static_dir();
+    let target_dir = target_dir.unwrap_or_default();
+    let relative_target = validate_relative_path(&target_dir)?;
+    let dest_dir = if target_dir.is_empty() {
+        static_dir.clone()
+    } else {
+        static_dir.join(relative_target)
+    };
 
     // Create images directory if it doesn't exist
-    fs::create_dir_all(&images_dir)
-        .map_err(|e| format!("Failed to create images directory: {}", e))?;
+    fs::create_dir_all(&dest_dir)
+        .map_err(|e| format!("Failed to create target directory: {}", e))?;
 
     let source = Path::new(&source_path);
     let filename = source
@@ -544,7 +733,7 @@ pub fn copy_image_to_project(
         .ok_or("Invalid source filename")?;
     let sanitized_filename = sanitize_image_filename(filename);
 
-    let dest_path = images_dir.join(&sanitized_filename);
+    let dest_path = dest_dir.join(&sanitized_filename);
 
     // Handle duplicate filenames
     let final_dest = if dest_path.exists() {
@@ -554,7 +743,7 @@ pub fn copy_image_to_project(
             .and_then(|s| s.to_str())
             .unwrap_or("file");
         let ext = source.extension().and_then(|s| s.to_str()).unwrap_or("");
-        images_dir.join(format!("{}_{}.{}", stem, timestamp, ext))
+        dest_dir.join(format!("{}_{}.{}", stem, timestamp, ext))
     } else {
         dest_path
     };
@@ -564,7 +753,7 @@ pub fn copy_image_to_project(
 
     // Return URL path for markdown
     let relative_path = final_dest
-        .strip_prefix(&project_path)
+        .strip_prefix(&static_dir)
         .ok()
         .and_then(|p| p.to_str())
         .ok_or("Failed to get relative path")?;
@@ -595,6 +784,63 @@ fn sanitize_image_filename(filename: &str) -> String {
     } else {
         format!("{}.{}", sanitized, ext)
     }
+}
+
+fn validate_relative_path(relative: &str) -> Result<PathBuf, String> {
+    if relative.is_empty() {
+        return Ok(PathBuf::new());
+    }
+
+    let path = Path::new(relative);
+    if path.is_absolute() {
+        return Err("Path must be relative".to_string());
+    }
+
+    for component in path.components() {
+        match component {
+            Component::Normal(_) | Component::CurDir => {}
+            Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
+                return Err("Path must not contain parent or root segments".to_string());
+            }
+        }
+    }
+
+    Ok(path.to_path_buf())
+}
+
+fn validate_folder_name(name: &str) -> Result<(), String> {
+    if name.is_empty() {
+        return Err("Folder name is required".to_string());
+    }
+    if name == "." || name == ".." {
+        return Err("Invalid folder name".to_string());
+    }
+    if name.contains('/') || name.contains('\\') {
+        return Err("Folder name must not contain path separators".to_string());
+    }
+    Ok(())
+}
+
+fn file_times(path: &Path) -> Result<(i64, i64), String> {
+    let metadata = fs::metadata(path)
+        .map_err(|e| format!("Failed to get file metadata: {}", e))?;
+
+    let created_at = metadata
+        .created()
+        .ok()
+        .or(metadata.modified().ok())
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d: std::time::Duration| d.as_secs() as i64)
+        .unwrap_or(0);
+
+    let modified_at = metadata
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d: std::time::Duration| d.as_secs() as i64)
+        .unwrap_or(0);
+
+    Ok((created_at, modified_at))
 }
 
 #[command]
@@ -679,7 +925,7 @@ fn transliterate_russian(text: &str) -> String {
 
 fn create_image_info(
     image_path: &Path,
-    images_dir: &Path,
+    static_dir: &Path,
     _project_path: &Path,
 ) -> Result<ImageInfo, String> {
     let metadata = fs::metadata(image_path)
@@ -692,7 +938,7 @@ fn create_image_info(
         .to_string();
 
     let path = image_path
-        .strip_prefix(images_dir)
+        .strip_prefix(static_dir)
         .ok()
         .and_then(|p| p.to_str())
         .unwrap_or("")
@@ -702,7 +948,7 @@ fn create_image_info(
         .to_string_lossy()
         .to_string();
 
-    let url = format!("/images/{}", path.replace('\\', "/"));
+    let url = format!("/{}", path.replace('\\', "/"));
 
     let created_at = metadata
         .created()
@@ -826,40 +1072,105 @@ impl Draft {
 
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
-pub struct HexoConfig {
-    pub title: String,
-    pub subtitle: Option<String>,
-    pub description: Option<String>,
-    pub author: Option<String>,
-    pub language: String,
-    pub url: String,
-    #[serde(flatten)]
-    pub other: serde_json::Value,
+pub struct StaticEntry {
+    pub name: String,
+    pub path: String,
+    pub kind: String,
+    pub size: u64,
+    pub created_at: i64,
+    pub modified_at: i64,
+    pub url: Option<String>,
+    pub full_path: String,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct HugoConfig {
+    pub title: Option<String>,
+    pub base_url: Option<String>,
+    pub language_code: Option<String>,
+    pub default_content_language: Option<String>,
+    pub theme: Option<String>,
+    pub raw: serde_json::Value,
+}
+
+impl HugoConfig {
+    pub fn from_value(raw: serde_json::Value) -> Self {
+        let title = extract_string(&raw, &["title"]);
+        let base_url = extract_string(&raw, &["baseURL", "baseUrl", "base_url"]);
+        let language_code = extract_string(&raw, &["languageCode", "language_code"]);
+        let default_content_language =
+            extract_string(&raw, &["defaultContentLanguage", "default_content_language"]);
+        let theme = extract_string(&raw, &["theme"]);
+
+        Self {
+            title,
+            base_url,
+            language_code,
+            default_content_language,
+            theme,
+            raw,
+        }
+    }
 }
 
 // ====================
-// Hexo Commands
+// Hugo Commands
 // ====================
 
 #[command]
-pub fn run_hexo_command(project_path: String, command: String) -> Result<crate::hexo::CommandOutput, String> {
-    let project = HexoProject::new(PathBuf::from(&project_path));
-    project.run_command(&command)
+pub fn run_hugo_command(
+    project_path: String,
+    args: Vec<String>,
+) -> Result<crate::hugo::CommandOutput, String> {
+    let project = HugoProject::new(PathBuf::from(&project_path));
+    project.run_command(&args)
 }
 
 #[command]
-pub fn start_hexo_server(project_path: String) -> Result<String, String> {
-    let project = HexoProject::new(PathBuf::from(&project_path));
+pub fn start_hugo_server(project_path: String) -> Result<String, String> {
+    let project = HugoProject::new(PathBuf::from(&project_path));
     project.start_server()
 }
 
 #[command]
-pub fn stop_hexo_server(server_id: String) -> Result<(), String> {
-    HexoProject::stop_server(&server_id)
+pub fn stop_hugo_server(server_id: String) -> Result<(), String> {
+    HugoProject::stop_server(&server_id)
 }
 
 #[command]
-pub fn is_hexo_server_running(project_path: String) -> Result<bool, String> {
-    let project = HexoProject::new(PathBuf::from(&project_path));
+pub fn is_hugo_server_running(project_path: String) -> Result<bool, String> {
+    let project = HugoProject::new(PathBuf::from(&project_path));
     Ok(project.is_server_running())
+}
+
+fn parse_hugo_config(path: &Path, content: &str) -> Result<serde_json::Value, String> {
+    match path.extension().and_then(|s| s.to_str()) {
+        Some("toml") => {
+            let value: toml::Value = toml::from_str(content)
+                .map_err(|e| format!("Failed to parse TOML config: {}", e))?;
+            serde_json::to_value(value)
+                .map_err(|e| format!("Failed to convert TOML config: {}", e))
+        }
+        Some("yml") | Some("yaml") => {
+            serde_yaml::from_str(content)
+                .map_err(|e| format!("Failed to parse YAML config: {}", e))
+        }
+        Some("json") => {
+            serde_json::from_str(content)
+                .map_err(|e| format!("Failed to parse JSON config: {}", e))
+        }
+        _ => Err("Unsupported Hugo config format".to_string()),
+    }
+}
+
+fn extract_string(value: &serde_json::Value, keys: &[&str]) -> Option<String> {
+    for key in keys {
+        if let Some(found) = value.get(*key) {
+            if let Some(text) = found.as_str() {
+                return Some(text.to_string());
+            }
+        }
+    }
+    None
 }

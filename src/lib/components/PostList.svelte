@@ -379,18 +379,19 @@
     position: relative;
     display: flex;
     align-items: center;
+    gap: 0.5rem;
   }
 
   .search-icon {
-    position: absolute;
-    left: 0.75rem;
+    position: static;
     color: #9ca3af;
-    pointer-events: none;
+    flex-shrink: 0;
   }
 
   .search-input {
+    flex: 1;
     width: 100%;
-    padding: 0.625rem 1rem 0.625rem 2.5rem;
+    padding: 0.625rem 0.75rem;
     background-color: #ffffff;
     border: 1px solid #e5e5e5;
     border-radius: 0.375rem;

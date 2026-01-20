@@ -45,7 +45,7 @@
     if (!url) return '';
     const projectPath = backend.getProjectPath();
     if (!projectPath || !url.startsWith('/')) return url;
-    return convertFileSrc(`${projectPath}/source${url}`);
+    return convertFileSrc(`${projectPath}/static${url}`);
   };
 
   const getCustomFieldString = (name: string) => {

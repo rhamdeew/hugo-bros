@@ -38,7 +38,7 @@ impl AppConfig {
     fn get_config_path() -> Result<PathBuf, String> {
         let config_dir = dirs::config_dir()
             .ok_or("Failed to get config directory")?;
-        let app_config_dir = config_dir.join("hex-tool");
+        let app_config_dir = config_dir.join("hugo-bros");
 
         // Create directory if it doesn't exist
         if !app_config_dir.exists() {

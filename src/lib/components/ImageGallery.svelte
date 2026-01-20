@@ -1,79 +1,96 @@
 <script lang="ts">
-  import { X, Search, Upload as UploadIcon, Trash2, Image as ImageIcon } from 'lucide-svelte';
+  import { X, Search, Upload as UploadIcon, Trash2, Image as ImageIcon, Folder, FolderPlus, ArrowUp } from 'lucide-svelte';
   import { convertFileSrc } from '@tauri-apps/api/core';
+  import { open as openDialog } from '@tauri-apps/plugin-dialog';
   import { backend } from '$lib/services/backend';
-  import type { ImageInfo } from '$lib/types';
+  import type { StaticEntry } from '$lib/types';
 
-  interface ImageWithSrc extends ImageInfo {
+  interface ImageWithSrc extends StaticEntry {
     displaySrc: string;
   }
 
   interface Props {
     open: boolean;
-    images: ImageInfo[];
-    onSelect?: (image: ImageInfo) => void;
-    onDelete?: (image: ImageInfo) => void;
-    onUpload?: () => void;
+    onSelect?: (entry: StaticEntry) => void;
   }
 
   let {
     open = $bindable(false),
-    images,
-    onSelect,
-    onDelete,
-    onUpload
+    onSelect
   }: Props = $props();
 
   let searchQuery = $state('');
   let sortBy = $state<'name' | 'date' | 'size'>('date');
-  let selectedImage = $state<ImageInfo | null>(null);
+  let selectedEntry = $state<StaticEntry | null>(null);
+  let entries = $state<StaticEntry[]>([]);
+  let loading = $state(false);
+  let loadError = $state<string | null>(null);
+  let currentDir = $state('');
+  let showNewFolder = $state(false);
+  let newFolderName = $state('');
 
-  const resolveImageSrc = (image: ImageInfo) => {
-    if (image.fullPath) return convertFileSrc(image.fullPath);
+  const resolveEntrySrc = (entry: StaticEntry) => {
+    if (entry.fullPath) return convertFileSrc(entry.fullPath);
 
     const projectPath = backend.getProjectPath();
     if (projectPath) {
-      if (image.path) {
-        return convertFileSrc(`${projectPath}/source/images/${image.path}`);
+      if (entry.path) {
+        return convertFileSrc(`${projectPath}/static/${entry.path}`);
       }
-      if (image.url && image.url.startsWith('/')) {
-        return convertFileSrc(`${projectPath}/source${image.url}`);
+      if (entry.url && entry.url.startsWith('/')) {
+        return convertFileSrc(`${projectPath}/static${entry.url}`);
       }
     }
 
-    return image.url || '';
+    return entry.url || '';
   };
 
-  // Pre-compute display URLs for all images
-  let imagesWithSrc = $derived(images.map(img => ({
-    ...img,
-    displaySrc: resolveImageSrc(img)
-  })) as ImageWithSrc[]);
+  $effect(() => {
+    if (!open) return;
+    currentDir;
+    void loadEntries();
+  });
 
-  // Filter and sort images
-  let filteredImages = $derived(imagesWithSrc
-    .filter((img) => {
+  // Filter and sort entries
+  let filteredEntries = $derived(entries
+    .filter((entry) => {
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
         return (
-          img.filename.toLowerCase().includes(query) ||
-          img.path.toLowerCase().includes(query)
+          entry.name.toLowerCase().includes(query) ||
+          entry.path.toLowerCase().includes(query)
         );
       }
       return true;
-    })
-    .sort((a, b) => {
-      switch (sortBy) {
-        case 'name':
-          return a.filename.localeCompare(b.filename);
-        case 'date':
-          return b.createdAt - a.createdAt;
-        case 'size':
-          return b.size - a.size;
-        default:
-          return 0;
-      }
     }));
+
+  let directoryEntries = $derived(
+    filteredEntries
+      .filter((entry) => entry.kind === 'dir')
+      .sort((a, b) => a.name.localeCompare(b.name))
+  );
+
+  let fileEntries = $derived(
+    filteredEntries
+      .filter((entry) => entry.kind === 'file')
+      .sort((a, b) => {
+        switch (sortBy) {
+          case 'name':
+            return a.name.localeCompare(b.name);
+          case 'date':
+            return b.createdAt - a.createdAt;
+          case 'size':
+            return b.size - a.size;
+          default:
+            return 0;
+        }
+      })
+  );
+
+  let filesWithSrc = $derived(fileEntries.map(entry => ({
+    ...entry,
+    displaySrc: resolveEntrySrc(entry)
+  })) as ImageWithSrc[]);
 
   function formatBytes(bytes: number): string {
     if (bytes === 0) return '0 Bytes';
@@ -83,20 +100,107 @@
     return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
   }
 
-  function handleSelect(image: ImageInfo) {
-    selectedImage = image;
-    onSelect?.(image);
-    open = false;
-  }
-
-  function handleDelete(image: ImageInfo) {
-    if (confirm(`Delete "${image.filename}"?`)) {
-      onDelete?.(image);
+  async function loadEntries() {
+    if (loading) return;
+    loading = true;
+    loadError = null;
+    try {
+      entries = await backend.listStaticEntries(currentDir);
+    } catch (err) {
+      loadError = err instanceof Error ? err.message : 'Failed to load entries';
+    } finally {
+      loading = false;
     }
   }
 
-  function handleImageClick(image: ImageInfo) {
-    selectedImage = image;
+  function navigateToDir(path: string) {
+    currentDir = path;
+    selectedEntry = null;
+  }
+
+  function handleSelect(entry: StaticEntry) {
+    if (entry.kind !== 'file') {
+      return;
+    }
+    selectedEntry = entry;
+    onSelect?.(entry);
+    open = false;
+  }
+
+  function handleEntryClick(entry: StaticEntry) {
+    selectedEntry = entry;
+  }
+
+  function handleEntryDoubleClick(entry: StaticEntry) {
+    if (entry.kind === 'dir') {
+      navigateToDir(entry.path);
+      return;
+    }
+    handleSelect(entry);
+  }
+
+  async function handleDelete(entry: StaticEntry) {
+    const label = entry.kind === 'dir' ? 'folder' : 'file';
+    const prompt = entry.kind === 'dir'
+      ? `Delete folder "${entry.name}" and all of its contents?`
+      : `Delete "${entry.name}"?`;
+    if (!confirm(prompt)) return;
+    try {
+      await backend.deleteStaticEntry(entry.path);
+      await loadEntries();
+      if (selectedEntry?.path === entry.path) {
+        selectedEntry = null;
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : `Failed to delete ${label}`);
+    }
+  }
+
+  async function handleCreateFolder() {
+    const name = newFolderName.trim();
+    if (!name) return;
+    try {
+      await backend.createStaticFolder(currentDir, name);
+      newFolderName = '';
+      showNewFolder = false;
+      await loadEntries();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to create folder');
+    }
+  }
+
+  async function handleUpload() {
+    try {
+      const selected = await openDialog({
+        multiple: false,
+        filters: [{
+          name: 'Images',
+          extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg']
+        }]
+      });
+
+      if (!selected) return;
+      const sourcePath = typeof selected === 'string' ? selected : selected[0];
+      if (!sourcePath) return;
+      await backend.copyImageToProject(sourcePath, currentDir);
+      await loadEntries();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to upload image');
+    }
+  }
+
+  let breadcrumbSegments = $derived(() => {
+    if (!currentDir) return [];
+    const parts = currentDir.split('/').filter(Boolean);
+    return parts.map((segment, index) => ({
+      name: segment,
+      path: parts.slice(0, index + 1).join('/')
+    }));
+  });
+
+  function getParentDir() {
+    if (!breadcrumbSegments.length) return '';
+    return breadcrumbSegments.slice(0, -1).map((seg) => seg.name).join('/');
   }
 </script>
 
@@ -135,37 +239,127 @@
             <option value="size">Sort by size</option>
           </select>
 
-          {#if onUpload}
-            <button class="upload-btn" onclick={onUpload} type="button">
-              <UploadIcon size={18} />
-              <span>Upload</span>
-            </button>
-          {/if}
+          <button class="folder-btn" onclick={() => (showNewFolder = !showNewFolder)} type="button">
+            <FolderPlus size={18} />
+            <span>New Folder</span>
+          </button>
+
+          <button class="upload-btn" onclick={handleUpload} type="button">
+            <UploadIcon size={18} />
+            <span>Upload</span>
+          </button>
         </div>
       </div>
 
-      <!-- Images Grid -->
+      {#if showNewFolder}
+        <div class="folder-row">
+          <input
+            class="folder-input"
+            type="text"
+            placeholder="Folder name"
+            bind:value={newFolderName}
+            onkeydown={(e) => {
+              if (e.key === 'Enter') handleCreateFolder();
+              if (e.key === 'Escape') showNewFolder = false;
+            }}
+          />
+          <button class="folder-create-btn" onclick={handleCreateFolder} type="button">
+            Create
+          </button>
+          <button class="folder-cancel-btn" onclick={() => (showNewFolder = false)} type="button">
+            Cancel
+          </button>
+        </div>
+      {/if}
+
+      <div class="breadcrumb-row">
+        <button
+          class="breadcrumb-root"
+          onclick={() => navigateToDir('')}
+          type="button"
+        >
+          static
+        </button>
+        {#if currentDir}
+          <span class="breadcrumb-separator">/</span>
+        {/if}
+        {#each breadcrumbSegments as segment}
+          <button
+            class="breadcrumb-link"
+            onclick={() => navigateToDir(segment.path)}
+            type="button"
+          >
+            {segment.name}
+          </button>
+          <span class="breadcrumb-separator">/</span>
+        {/each}
+      </div>
+
+      <!-- Entries Grid -->
       <div class="images-grid">
-        {#each filteredImages as image (image.fullPath || image.path || image.filename)}
+        {#if currentDir}
+          <button class="folder-up" onclick={() => navigateToDir(getParentDir())} type="button">
+            <ArrowUp size={20} />
+            <span>Up</span>
+          </button>
+        {/if}
+
+        {#each directoryEntries as entry (entry.path)}
           <div
-            class="image-card"
-            class:selected={selectedImage?.fullPath === image.fullPath}
-            onclick={() => handleImageClick(image)}
-            ondblclick={() => handleSelect(image)}
+            class="image-card folder-card"
+            class:selected={selectedEntry?.path === entry.path}
+            onclick={() => handleEntryClick(entry)}
+            ondblclick={() => handleEntryDoubleClick(entry)}
             role="button"
             tabindex="0"
             onkeydown={(e) => {
               if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault();
-                handleSelect(image);
+                handleEntryDoubleClick(entry);
+              }
+            }}
+          >
+            <div class="image-thumb folder-thumb">
+              <Folder size={36} />
+              <span class="folder-label" title={entry.name}>{entry.name}</span>
+            </div>
+            <div class="image-info">
+              <p class="image-meta">Folder</p>
+              <button
+                class="delete-btn"
+                onclick={(e) => {
+                  e.stopPropagation();
+                  handleDelete(entry);
+                }}
+                type="button"
+                aria-label="Delete folder"
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
+          </div>
+        {/each}
+
+        {#each filesWithSrc as entry (entry.fullPath || entry.path || entry.name)}
+          <div
+            class="image-card"
+            class:selected={selectedEntry?.path === entry.path}
+            onclick={() => handleEntryClick(entry)}
+            ondblclick={() => handleEntryDoubleClick(entry)}
+            role="button"
+            tabindex="0"
+            onkeydown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                handleEntryDoubleClick(entry);
               }
             }}
           >
             <div class="image-thumb">
-              {#if image.displaySrc}
+              {#if entry.displaySrc}
                 <img
-                  src={image.displaySrc}
-                  alt={image.filename}
+                  src={entry.displaySrc}
+                  alt={entry.name}
                   loading="lazy"
                   onerror={(e) => {
                     // Hide broken image and show placeholder
@@ -185,40 +379,47 @@
               {/if}
             </div>
             <div class="image-info">
-              <p class="image-name" title={image.filename}>{image.filename}</p>
-              <p class="image-meta">{formatBytes(image.size)}</p>
-              {#if onDelete}
-                <button
-                  class="delete-btn"
-                  onclick={(e) => {
-                    e.stopPropagation();
-                    handleDelete(image);
-                  }}
-                  type="button"
-                  aria-label="Delete image"
-                >
-                  <Trash2 size={14} />
-                </button>
-              {/if}
+              <p class="image-name" title={entry.name}>{entry.name}</p>
+              <p class="image-meta">{formatBytes(entry.size)}</p>
+              <button
+                class="delete-btn"
+                onclick={(e) => {
+                  e.stopPropagation();
+                  handleDelete(entry);
+                }}
+                type="button"
+                aria-label="Delete image"
+              >
+                <Trash2 size={14} />
+              </button>
             </div>
           </div>
         {/each}
 
-        {#if filteredImages.length === 0}
+        {#if loading && directoryEntries.length + filesWithSrc.length === 0}
+          <div class="empty-gallery">
+            <ImageIcon size={48} class="empty-icon" />
+            <h3>Loading...</h3>
+          </div>
+        {:else if loadError}
+          <div class="empty-gallery">
+            <ImageIcon size={48} class="empty-icon" />
+            <h3>Failed to load entries</h3>
+            <p>{loadError}</p>
+          </div>
+        {:else if directoryEntries.length + filesWithSrc.length === 0}
           <div class="empty-gallery">
             <ImageIcon size={48} class="empty-icon" />
             <h3>No images found</h3>
             <p>
               {#if searchQuery}
                 Try a different search term
-              {:else if onUpload}
-                Upload an image to get started
               {:else}
-                No images available
+                Upload an image to get started
               {/if}
             </p>
-            {#if onUpload && !searchQuery}
-              <button class="upload-btn-empty" onclick={onUpload} type="button">
+            {#if !searchQuery}
+              <button class="upload-btn-empty" onclick={handleUpload} type="button">
                 <UploadIcon size={18} />
                 Upload Image
               </button>
@@ -228,14 +429,14 @@
       </div>
 
       <!-- Selected Image Info -->
-      {#if selectedImage}
+      {#if selectedEntry && selectedEntry.kind === 'file'}
         <div class="selected-info">
           <p class="info-text">
-            Selected: <strong>{selectedImage.filename}</strong> ({formatBytes(selectedImage.size)})
+            Selected: <strong>{selectedEntry.name}</strong> ({formatBytes(selectedEntry.size)})
           </p>
           <button
             class="select-btn"
-            onclick={() => selectedImage && handleSelect(selectedImage)}
+            onclick={() => selectedEntry && handleSelect(selectedEntry)}
             type="button"
           >
             Insert
@@ -341,18 +542,19 @@
     position: relative;
     display: flex;
     align-items: center;
+    gap: 0.5rem;
   }
 
   .search-icon {
-    position: absolute;
-    left: 0.75rem;
+    position: static;
     color: #9ca3af;
-    pointer-events: none;
+    flex-shrink: 0;
   }
 
   .search-input {
+    flex: 1;
     width: 100%;
-    padding: 0.625rem 1rem 0.625rem 2.5rem;
+    padding: 0.625rem 0.75rem;
     background-color: #ffffff;
     border: 1px solid #e5e5e5;
     border-radius: 0.375rem;
@@ -406,6 +608,127 @@
     background-color: #2563eb;
   }
 
+  .folder-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.625rem 0.9rem;
+    background-color: #ffffff;
+    color: #374151;
+    border: 1px solid #d1d5db;
+    border-radius: 0.375rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+  }
+
+  .folder-btn:hover {
+    background-color: #f3f4f6;
+  }
+
+  :global(.dark .folder-btn) {
+    background-color: #404040;
+    color: #e5e7eb;
+    border-color: #525252;
+  }
+
+  .folder-row {
+    display: flex;
+    gap: 0.5rem;
+    padding: 0 1.5rem 1rem;
+  }
+
+  .folder-input {
+    flex: 1;
+    padding: 0.625rem 0.75rem;
+    border-radius: 0.375rem;
+    border: 1px solid #e5e5e5;
+    font-size: 0.875rem;
+  }
+
+  :global(.dark .folder-input) {
+    background-color: #404040;
+    border-color: #525252;
+    color: #e5e7eb;
+  }
+
+  .folder-create-btn,
+  .folder-cancel-btn {
+    padding: 0.625rem 0.9rem;
+    border-radius: 0.375rem;
+    border: 1px solid #d1d5db;
+    background-color: #ffffff;
+    font-size: 0.875rem;
+    cursor: pointer;
+  }
+
+  .folder-create-btn {
+    background-color: #3b82f6;
+    border-color: #3b82f6;
+    color: #ffffff;
+  }
+
+  .folder-cancel-btn {
+    color: #374151;
+  }
+
+  :global(.dark .folder-create-btn) {
+    border-color: #2563eb;
+  }
+
+  :global(.dark .folder-cancel-btn) {
+    background-color: #404040;
+    color: #e5e7eb;
+    border-color: #525252;
+  }
+
+  .breadcrumb-row {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0 1.5rem 0.75rem;
+    font-size: 0.85rem;
+    color: #6b7280;
+    flex-wrap: wrap;
+  }
+
+  .breadcrumb-root,
+  .breadcrumb-link {
+    background: none;
+    border: none;
+    color: #2563eb;
+    cursor: pointer;
+    padding: 0;
+    font-size: 0.85rem;
+  }
+
+  :global(.dark .breadcrumb-root),
+  :global(.dark .breadcrumb-link) {
+    color: #93c5fd;
+  }
+
+  .breadcrumb-separator {
+    color: #9ca3af;
+  }
+
+  .folder-up {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem;
+    border: 2px dashed #cbd5f5;
+    border-radius: 0.5rem;
+    background-color: #f8fafc;
+    color: #1f2937;
+    cursor: pointer;
+  }
+
+  :global(.dark .folder-up) {
+    border-color: #334155;
+    background-color: #1f2937;
+    color: #e5e7eb;
+  }
+
   /* Images Grid */
   .images-grid {
     flex: 1;
@@ -414,6 +737,7 @@
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
     gap: 1rem;
+    align-items: start;
   }
 
   .image-card {
@@ -423,7 +747,7 @@
     border-radius: 0.5rem;
     overflow: hidden;
     transition: all 0.15s ease;
-    height: 100px;
+    height: 150px;
   }
 
   .image-card:hover {
@@ -444,8 +768,8 @@
 
   .image-thumb {
     aspect-ratio: 1;
-    min-height: 120px;
-    height: 100px;
+    min-height: 110px;
+    height: 110px;
     background-color: #f7f7f7;
     display: flex;
     align-items: center;
@@ -454,14 +778,33 @@
     position: relative;
   }
 
+  .folder-card {
+    height: 150px;
+  }
+
+  .folder-thumb {
+    color: #2563eb;
+    background: linear-gradient(135deg, #e0e7ff, #f8fafc);
+    flex-direction: column;
+    gap: 0.35rem;
+    padding: 0.5rem;
+    height: 100%;
+    width: 100%;
+  }
+
   :global(.dark .image-thumb) {
     background-color: #404040;
   }
 
+  :global(.dark .folder-thumb) {
+    background: linear-gradient(135deg, #1e293b, #0f172a);
+    color: #93c5fd;
+  }
+
   .image-thumb img {
     height: 100%;
-    width: auto;
-    max-width: 100%;
+    width: 100%;
+    object-fit: cover;
   }
 
   .no-image {
@@ -492,6 +835,7 @@
     padding: 0.5rem;
     background-color: #ffffff;
     border-top: 1px solid #e5e5e5;
+    min-height: 40px;
   }
 
   :global(.dark .image-info) {
@@ -517,6 +861,21 @@
     font-size: 0.714px;
     color: #666666;
     margin: 0;
+  }
+
+  .folder-label {
+    font-size: 0.75rem;
+    color: #1e3a8a;
+    text-align: center;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding: 0 0.25rem;
+  }
+
+  :global(.dark .folder-label) {
+    color: #bfdbfe;
   }
 
   :global(.dark .image-meta) {

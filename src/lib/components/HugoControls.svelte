@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { Server, Play, Square, Globe, Package, Trash2, Upload } from 'lucide-svelte';
+  import { Play, Square, Globe, Package, Trash2, Upload } from 'lucide-svelte';
   import { openUrl } from '@tauri-apps/plugin-opener';
   import { confirm, message } from '@tauri-apps/plugin-dialog';
   import { backend } from '$lib/services/backend';
@@ -27,7 +27,7 @@
 
   async function checkServerStatus() {
     try {
-      serverRunning = await backend.isHexoServerRunning();
+      serverRunning = await backend.isHugoServerRunning();
     } catch (err) {
       console.error('Failed to check server status:', err);
     }
@@ -38,17 +38,17 @@
 
     loading = true;
     try {
-      serverId = await backend.startHexoServer();
+      serverId = await backend.startHugoServer();
       serverRunning = true;
       await message(
-        'Hexo server started successfully!\nAccess your blog at http://localhost:4000',
-        { title: 'Hex Tool' }
+        'Hugo server started successfully!\nAccess your site at http://localhost:1313',
+        { title: 'Hugo Bros' }
       );
     } catch (err) {
       console.error('Failed to start server:', err);
       await message(
         'Failed to start server: ' + (err instanceof Error ? err.message : 'Unknown error'),
-        { title: 'Hex Tool', kind: 'error' }
+        { title: 'Hugo Bros', kind: 'error' }
       );
     } finally {
       loading = false;
@@ -60,15 +60,15 @@
 
     loading = true;
     try {
-      await backend.stopHexoServer(serverId);
+      await backend.stopHugoServer(serverId);
       serverRunning = false;
       serverId = null;
-      await message('Hexo server stopped', { title: 'Hex Tool' });
+      await message('Hugo server stopped', { title: 'Hugo Bros' });
     } catch (err) {
       console.error('Failed to stop server:', err);
       await message(
         'Failed to stop server: ' + (err instanceof Error ? err.message : 'Unknown error'),
-        { title: 'Hex Tool', kind: 'error' }
+        { title: 'Hugo Bros', kind: 'error' }
       );
     } finally {
       loading = false;
@@ -78,27 +78,28 @@
   async function openInBrowser() {
     if (!serverRunning) {
       await message('Server is not running. Please start the server first.', {
-        title: 'Hex Tool',
+        title: 'Hugo Bros',
         kind: 'warning'
       });
       return;
     }
     try {
-      await openUrl('http://localhost:4000');
+      await openUrl('http://localhost:1313');
     } catch (err) {
       console.error('Failed to open browser:', err);
       await message(
         'Failed to open browser: ' + (err instanceof Error ? err.message : 'Unknown error'),
-        { title: 'Hex Tool', kind: 'error' }
+        { title: 'Hugo Bros', kind: 'error' }
       );
     }
   }
 
-  async function runCommand(command: string, commandName: string) {
+  async function runCommand(args: string[], commandName: string) {
     if (loading) return;
 
-    const confirmed = await confirm(`Run "hexo ${command}"?`, {
-      title: 'Hex Tool',
+    const commandLabel = args.length > 0 ? `hugo ${args.join(' ')}` : 'hugo';
+    const confirmed = await confirm(`Run "${commandLabel}"?`, {
+      title: 'Hugo Bros',
       kind: 'warning'
     });
     if (!confirmed) return;
@@ -108,7 +109,7 @@
     commandOutput = null;
 
     try {
-      const output = await backend.runHexoCommand(command);
+      const output = await backend.runHugoCommand(args);
       commandOutput = {
         ...output,
         stdout: stripAnsi(output.stdout),
@@ -119,8 +120,8 @@
     } catch (err) {
       console.error(`Failed to run ${command}:`, err);
       await message(
-        `Failed to run ${command}: ` + (err instanceof Error ? err.message : 'Unknown error'),
-        { title: 'Hex Tool', kind: 'error' }
+        `Failed to run ${commandName}: ` + (err instanceof Error ? err.message : 'Unknown error'),
+        { title: 'Hugo Bros', kind: 'error' }
       );
     } finally {
       loading = false;
@@ -137,7 +138,7 @@
   }
 </script>
 
-<div class="hexo-controls">
+<div class="hugo-controls">
   <!-- Server Status Indicator -->
   <div class="status-indicator">
     <div class="status-dot {serverRunning ? 'running' : 'stopped'}"></div>
@@ -179,22 +180,22 @@
     </button>
   </div>
 
-  <!-- Hexo Commands -->
+  <!-- Hugo Commands -->
   <div class="button-group">
     <button
       class="control-btn"
-      onclick={() => runCommand('generate', 'Generate')}
+      onclick={() => runCommand([], 'Build')}
       disabled={loading}
       type="button"
-      title="Generate static files"
+      title="Build the static site"
     >
       <Package size={16} />
-      <span>Generate</span>
+      <span>Build</span>
     </button>
 
     <button
       class="control-btn"
-      onclick={() => runCommand('clean', 'Clean')}
+      onclick={() => runCommand(['--gc', '--cleanDestinationDir'], 'Clean')}
       disabled={loading}
       type="button"
       title="Clean generated files and cache"
@@ -205,7 +206,7 @@
 
     <button
       class="control-btn"
-      onclick={() => runCommand('deploy', 'Deploy')}
+      onclick={() => runCommand(['deploy'], 'Deploy')}
       disabled={loading}
       type="button"
       title="Deploy to remote"
@@ -252,7 +253,7 @@
 {/if}
 
 <style>
-  .hexo-controls {
+  .hugo-controls {
     display: flex;
     align-items: center;
     gap: 1rem;
@@ -262,7 +263,7 @@
     border: 1px solid #e5e7eb;
   }
 
-  :global(.dark .hexo-controls) {
+  :global(.dark .hugo-controls) {
     background-color: #1f1f1f;
     border-color: #404040;
   }

@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Hex Tool",
-  "version": "0.1.5",
-  "identifier": "com.rail.hex-tool",
+  "productName": "Hugo Bros",
+  "version": "0.1.6",
+  "identifier": "com.rail.hugo-bros",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Hex Tool - Hexo Blog Editor",
+        "title": "Hugo Bros - Hugo Site Editor",
         "width": 1280,
         "height": 800,
         "minWidth": 1024,

@@ -4,7 +4,7 @@
 - `src/` holds the SvelteKit frontend (`routes/` for pages, `lib/` for shared components).
 - `src-tauri/` contains the Rust backend and Tauri config (`src-tauri/src/`, `tauri.conf.json`).
 - `static/` is for static assets served by SvelteKit.
-- `example_blog/` is a sample Hexo blog fixture for local testing.
+- `example_blog/` is a sample Hugo blog fixture for local testing.
 - Build output lives in `build/`, `dist/`, and `.svelte-kit/` (generated).
 
 ## Build, Test, and Development Commands
@@ -27,7 +27,7 @@
 - There is no JavaScript test runner configured yet; use `npm run check` for TS/Svelte correctness.
 
 ## Commit & Pull Request Guidelines
-- Commit messages are short, imperative, and capitalized (e.g., `Add Hexo integration`).
+- Commit messages are short, imperative, and capitalized (e.g., `Add Hugo integration`).
 - PRs should include a concise description, testing notes, and UI screenshots when behavior changes.
 
 ## Configuration & Assets

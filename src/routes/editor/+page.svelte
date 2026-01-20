@@ -34,10 +34,9 @@
     GripVertical
   } from 'lucide-svelte';
   import { convertFileSrc } from '@tauri-apps/api/core';
-  import { open } from '@tauri-apps/plugin-dialog';
   import ImageGallery from '$lib/components/ImageGallery.svelte';
   import { backend } from '$lib/services/backend';
-  import type { Post, ImageInfo, FrontmatterConfig } from '$lib/types';
+  import type { Post, StaticEntry, FrontmatterConfig } from '$lib/types';
 
   // State
   let post = $state<Post | null>(null);
@@ -57,7 +56,6 @@
     | { kind: 'frontmatter'; fieldName: string }
     | null
   >(null);
-  let images = $state<ImageInfo[]>([]);
   let isLoading = $state(true);
   let loadError = $state<string | null>(null);
   let entryType = $state<'post' | 'page' | 'draft'>('post');
@@ -82,9 +80,36 @@
     if (!relativeUrl) return '';
     const projectPath = backend.getProjectPath();
     if (!projectPath) return relativeUrl;
-    // Project-relative URLs start with /images/, we need to prepend source/ path
-    const fullPath = `${projectPath}/source${relativeUrl}`;
+    if (!relativeUrl.startsWith('/')) return relativeUrl;
+    // Project-relative URLs start with /, we need to prepend static/ path
+    const fullPath = `${projectPath}/static${relativeUrl}`;
     return convertFileSrc(fullPath);
+  }
+
+  function formatDatetimeLocal(value?: string | null): string {
+    if (!value) return '';
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return value;
+    const pad = (num: number) => String(num).padStart(2, '0');
+    return `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())}T${pad(parsed.getHours())}:${pad(parsed.getMinutes())}`;
+  }
+
+  function toRfc3339Local(value: string): string {
+    if (!value) return '';
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return value;
+    const pad = (num: number) => String(num).padStart(2, '0');
+    const offsetMinutes = -parsed.getTimezoneOffset();
+    const sign = offsetMinutes >= 0 ? '+' : '-';
+    const absOffset = Math.abs(offsetMinutes);
+    const offsetHours = pad(Math.floor(absOffset / 60));
+    const offsetMins = pad(absOffset % 60);
+    return `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())}T${pad(parsed.getHours())}:${pad(parsed.getMinutes())}:${pad(parsed.getSeconds())}${sign}${offsetHours}:${offsetMins}`;
+  }
+
+  function normalizeOptionalDatetimeLocal(value: string): string | undefined {
+    if (!value) return undefined;
+    return toRfc3339Local(value);
   }
 
   function formatFieldLabel(name: string): string {
@@ -139,6 +164,9 @@
   function getCustomFieldInputValue(name: string, fieldType: string): string {
     const value = getCustomFieldValue(name);
     if (value == null) return '';
+    if (fieldType === 'datetime') {
+      return typeof value === 'string' ? formatDatetimeLocal(value) : String(value);
+    }
     if (fieldType === 'object' || fieldType === 'array') {
       if (typeof value === 'string') return value;
       try {
@@ -236,13 +264,6 @@
     // Setup keyboard shortcuts
     shortcutsCleanup = setupKeyboardShortcuts();
 
-    // Load images
-    try {
-      images = await backend.listImages();
-    } catch (err) {
-      console.error('Failed to load images:', err);
-    }
-
     try {
       frontmatterConfig = await backend.getFrontmatterConfig();
       const collapsedState: Record<string, boolean> = {};
@@ -291,7 +312,7 @@
       post.frontmatter.customFields = post.frontmatter.customFields || {};
       hasUnsavedChanges = false;
       saveStatus = 'saved';
-      document.title = `${post.title} - Hex Tool`;
+      document.title = `${post.title} - Hugo Bros`;
     } catch (error) {
       console.error('Failed to load entry:', error);
       loadError = error instanceof Error ? error.message : 'Failed to load entry';
@@ -484,14 +505,15 @@
     showImageGallery = true;
   }
 
-  function handleImageSelect(image: ImageInfo) {
+  function handleImageSelect(entry: StaticEntry) {
     if (!post) return;
+    if (!entry.url) return;
 
     if (pendingImageField?.kind === 'frontmatter') {
-      setCustomFieldValue(pendingImageField.fieldName, image.url);
+      setCustomFieldValue(pendingImageField.fieldName, entry.url);
     } else if (pendingImageField?.kind === 'content' && textareaRef) {
       const start = textareaRef.selectionStart;
-      const insertion = `![${image.filename}](${image.url})`;
+      const insertion = `![${entry.name}](${entry.url})`;
       const before = markdownContent.substring(0, start);
       const after = markdownContent.substring(start);
       markdownContent = before + insertion + after;
@@ -500,42 +522,6 @@
 
     showImageGallery = false;
     pendingImageField = null;
-  }
-
-  async function handleImageUpload() {
-    try {
-      // Use Tauri's native file dialog
-      const selected = await open({
-        multiple: false,
-        filters: [{
-          name: 'Images',
-          extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg']
-        }]
-      });
-
-      if (!selected) return; // User cancelled
-
-      const sourcePath = typeof selected === 'string' ? selected : selected[0];
-      if (!sourcePath) return;
-
-      const imageUrl = await backend.copyImageToProject(sourcePath);
-      images = await backend.listImages();
-
-      // Find the newly uploaded image and select it
-      const newImage = images.find(img => img.url === imageUrl);
-      if (newImage) {
-        handleImageSelect(newImage);
-      }
-    } catch (err) {
-      console.error('Failed to upload image:', err);
-      alert('Failed to upload image: ' + (err instanceof Error ? err.message : 'Unknown error'));
-    }
-  }
-
-  function handleImageDelete(image: ImageInfo) {
-    backend.deleteImage(image.path).then(() => {
-      images = images.filter((img) => img.fullPath !== image.fullPath);
-    });
   }
 
   // Frontmatter functions
@@ -581,10 +567,10 @@
       // Convert project-relative image URLs to Tauri asset URLs
       const projectPath = backend.getProjectPath();
       if (projectPath) {
-        // Replace src="/images/..." with Tauri asset URLs
-        html = html.replace(/src="(\/images\/[^"]+)"/g, (match, relativePath) => {
+        // Replace src="/..."" with Tauri asset URLs
+        html = html.replace(/src="(\/[^"]+)"/g, (match, relativePath) => {
           const decodedPath = decodeURIComponent(relativePath);
-          const fullPath = `${projectPath}/source${decodedPath}`;
+          const fullPath = `${projectPath}/static${decodedPath}`;
           return `src="${convertFileSrc(fullPath)}"`;
         });
       }
@@ -798,8 +784,11 @@
               <input
                 id="date"
                 type="datetime-local"
-                bind:value={post.frontmatter.date}
-                oninput={handleFrontmatterChange}
+                value={formatDatetimeLocal(post.frontmatter.date)}
+                oninput={(e) => {
+                  post.frontmatter.date = toRfc3339Local((e.target as HTMLInputElement).value);
+                  handleFrontmatterChange();
+                }}
               />
             </div>
 
@@ -809,8 +798,13 @@
               <input
                 id="updated"
                 type="datetime-local"
-                bind:value={post.frontmatter.updated}
-                oninput={handleFrontmatterChange}
+                value={formatDatetimeLocal(post.frontmatter.updated)}
+                oninput={(e) => {
+                  post.frontmatter.updated = normalizeOptionalDatetimeLocal(
+                    (e.target as HTMLInputElement).value
+                  );
+                  handleFrontmatterChange();
+                }}
               />
             </div>
 
@@ -999,7 +993,11 @@
                                   oninput={(e) =>
                                     setCustomFieldValue(
                                       field.name,
-                                      (e.target as HTMLInputElement).value
+                                      field.type === 'date'
+                                        ? (e.target as HTMLInputElement).value || null
+                                        : normalizeOptionalDatetimeLocal(
+                                            (e.target as HTMLInputElement).value
+                                          )
                                     )}
                                 />
                               {:else if field.type === 'image'}
@@ -1120,10 +1118,7 @@
   <!-- Image Gallery Modal -->
   <ImageGallery
     bind:open={showImageGallery}
-    {images}
     onSelect={handleImageSelect}
-    onUpload={handleImageUpload}
-    onDelete={handleImageDelete}
   />
 </div>
 

@@ -1,7 +1,7 @@
 [package]
-name = "hex-tool"
+name = "hugo-bros"
 version = "0.1.2"
-description = "GUI editor for Hexo blogs built with Tauri and Svelte"
+description = "GUI editor for Hugo sites built with Tauri and Svelte"
 authors = ["Rail"]
 edition = "2021"
 
@@ -11,7 +11,7 @@ edition = "2021"
 # The `_lib` suffix may seem redundant but it is necessary
 # to make the lib name unique and wouldn't conflict with the bin name.
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
-name = "hex_tool_lib"
+name = "hugo_bros_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
@@ -24,6 +24,7 @@ tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yaml = "0.9"
+toml = "0.8"
 walkdir = "2"
 chrono = "0.4"
 regex = "1"

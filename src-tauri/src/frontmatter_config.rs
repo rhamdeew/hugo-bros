@@ -1,6 +1,6 @@
 // Frontmatter configuration loading for custom fields
 
-use crate::hexo::HexoProject;
+use crate::hugo::HugoProject;
 use crate::markdown::MarkdownDocument;
 use chrono::DateTime;
 use serde::{Deserialize, Serialize};
@@ -63,7 +63,7 @@ impl Default for FrontmatterConfig {
 
 pub fn load_frontmatter_config(project_path: &Path) -> Result<FrontmatterConfig, String> {
     let config_path = project_path
-        .join(".hex-tool")
+        .join(".hugo-bros")
         .join("frontmatter-config.json");
 
     if !config_path.exists() {
@@ -80,7 +80,7 @@ pub fn load_frontmatter_config(project_path: &Path) -> Result<FrontmatterConfig,
 }
 
 pub fn generate_frontmatter_config(project_path: &Path) -> Result<FrontmatterConfig, String> {
-    let project = HexoProject::new(project_path.to_path_buf());
+    let project = HugoProject::new(project_path.to_path_buf());
     let posts_dir = project.get_posts_dir();
 
     let mut stats: HashMap<String, FieldStats> = HashMap::new();

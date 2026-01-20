@@ -41,10 +41,10 @@
   <div class="max-w-4xl mx-auto">
     <header class="text-center mb-12">
       <h1 class="text-4xl font-bold text-text-primary dark:text-dark-text-primary mb-4">
-        Hex Tool
+        Hugo Bros
       </h1>
       <p class="text-text-secondary dark:text-dark-text-secondary">
-        Hexo Blog Editor - Built with Tauri + Svelte
+        Hugo Site Editor - Built with Tauri + Svelte
       </p>
     </header>
 
@@ -59,7 +59,7 @@
           class="inline-flex items-center gap-2 px-6 py-3 bg-accent hover:bg-blue-600 text-white rounded-lg font-medium transition-colors"
         >
           <FolderOpen size={20} />
-          <span>Select Hexo Project</span>
+          <span>Select Hugo Project</span>
         </button>
       </div>
 

@@ -1,9 +1,9 @@
 import { writable } from 'svelte/store';
-import type { HexoConfig } from '$lib/types';
+import type { HugoConfig } from '$lib/types';
 
 export interface ProjectState {
   projectPath: string | null;
-  config: HexoConfig | null;
+  config: HugoConfig | null;
   isLoading: boolean;
 }
 
@@ -16,7 +16,7 @@ function createProjectStore() {
 
   return {
     subscribe,
-    setProject: (path: string, config: HexoConfig) => {
+    setProject: (path: string, config: HugoConfig) => {
       set({ projectPath: path, config, isLoading: false });
     },
     clearProject: () => {

@@ -5,7 +5,8 @@ import type {
   Page,
   Draft,
   ImageInfo,
-  HexoConfig,
+  StaticEntry,
+  HugoConfig,
   FrontmatterConfig,
   AppConfig,
   CommandOutput
@@ -48,9 +49,9 @@ export class BackendService {
     return path;
   }
 
-  async getProjectConfig(): Promise<HexoConfig> {
+  async getProjectConfig(): Promise<HugoConfig> {
     const projectPath = this.ensureProject();
-    return invoke<HexoConfig>('get_project_config', { projectPath });
+    return invoke<HugoConfig>('get_project_config', { projectPath });
   }
 
   async getFrontmatterConfig(): Promise<FrontmatterConfig> {
@@ -159,9 +160,24 @@ export class BackendService {
     return invoke<ImageInfo[]>('list_images', { projectPath });
   }
 
-  async copyImageToProject(sourcePath: string): Promise<string> {
+  async listStaticEntries(dir?: string): Promise<StaticEntry[]> {
     const projectPath = this.ensureProject();
-    return invoke<string>('copy_image_to_project', { projectPath, sourcePath });
+    return invoke<StaticEntry[]>('list_static_entries', { projectPath, dir });
+  }
+
+  async createStaticFolder(parentDir: string, name: string): Promise<string> {
+    const projectPath = this.ensureProject();
+    return invoke<string>('create_static_folder', { projectPath, parentDir, name });
+  }
+
+  async deleteStaticEntry(relativePath: string): Promise<void> {
+    const projectPath = this.ensureProject();
+    await invoke('delete_static_entry', { projectPath, relativePath });
+  }
+
+  async copyImageToProject(sourcePath: string, targetDir?: string): Promise<string> {
+    const projectPath = this.ensureProject();
+    return invoke<string>('copy_image_to_project', { projectPath, sourcePath, targetDir });
   }
 
   async deleteImage(imagePath: string): Promise<void> {
@@ -182,26 +198,26 @@ export class BackendService {
   }
 
   // ====================
-  // Hexo Server Commands
+  // Hugo Server Commands
   // ====================
 
-  async runHexoCommand(command: string): Promise<CommandOutput> {
+  async runHugoCommand(args: string[]): Promise<CommandOutput> {
     const projectPath = this.ensureProject();
-    return invoke<CommandOutput>('run_hexo_command', { projectPath, command });
+    return invoke<CommandOutput>('run_hugo_command', { projectPath, args });
   }
 
-  async startHexoServer(): Promise<string> {
+  async startHugoServer(): Promise<string> {
     const projectPath = this.ensureProject();
-    return invoke<string>('start_hexo_server', { projectPath });
+    return invoke<string>('start_hugo_server', { projectPath });
   }
 
-  async stopHexoServer(serverId: string): Promise<void> {
-    await invoke('stop_hexo_server', { serverId });
+  async stopHugoServer(serverId: string): Promise<void> {
+    await invoke('stop_hugo_server', { serverId });
   }
 
-  async isHexoServerRunning(): Promise<boolean> {
+  async isHugoServerRunning(): Promise<boolean> {
     const projectPath = this.ensureProject();
-    return invoke<boolean>('is_hexo_server_running', { projectPath });
+    return invoke<boolean>('is_hugo_server_running', { projectPath });
   }
 }
 

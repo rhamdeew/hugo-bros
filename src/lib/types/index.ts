@@ -1,4 +1,4 @@
-// Core types for Hexo Blog Editor
+// Core types for Hugo Bros
 
 export interface Post {
   id: string;
@@ -21,6 +21,7 @@ export interface Frontmatter {
   layout?: string;
   permalink?: string;
   description?: string;
+  draft?: boolean;
   customFields?: Record<string, unknown>;
 }
 
@@ -81,13 +82,24 @@ export interface ImageInfo {
   createdAt: number;
 }
 
-export interface HexoConfig {
-  title: string;
-  subtitle: string;
-  description: string;
-  author: string;
-  language: string;
-  url: string;
+export interface StaticEntry {
+  name: string;
+  path: string;
+  kind: 'file' | 'dir';
+  size: number;
+  createdAt: number;
+  modifiedAt: number;
+  url?: string;
+  fullPath: string;
+}
+
+export interface HugoConfig {
+  title?: string;
+  baseUrl?: string;
+  languageCode?: string;
+  defaultContentLanguage?: string;
+  theme?: string;
+  raw?: unknown;
 }
 
 export interface AppConfig {

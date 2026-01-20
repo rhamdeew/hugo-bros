@@ -20,6 +20,8 @@ pub struct Frontmatter {
   pub layout: Option<String>,
   pub permalink: Option<String>,
   pub description: Option<String>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub draft: Option<bool>,
   #[serde(default)]
   pub custom_fields: HashMap<String, serde_yaml::Value>,
 }
@@ -33,11 +35,18 @@ struct FrontmatterYaml {
     pub tags: Vec<String>,
     #[serde(default)]
     pub categories: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub updated: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub comments: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub layout: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub permalink: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub draft: Option<bool>,
     #[serde(flatten)]
     #[serde(default)]
     pub custom_fields: HashMap<String, serde_yaml::Value>,
@@ -55,6 +64,7 @@ impl From<FrontmatterYaml> for Frontmatter {
             layout: frontmatter.layout,
             permalink: frontmatter.permalink,
             description: frontmatter.description,
+            draft: frontmatter.draft,
             custom_fields: frontmatter.custom_fields,
         }
     }
@@ -72,6 +82,7 @@ impl From<Frontmatter> for FrontmatterYaml {
             layout: frontmatter.layout,
             permalink: frontmatter.permalink,
             description: frontmatter.description,
+            draft: frontmatter.draft,
             custom_fields: frontmatter.custom_fields,
         }
     }
@@ -102,8 +113,33 @@ impl MarkdownDocument {
             }
         }
 
+        // TOML frontmatter: +++\nfrontmatter\n+++\ncontent
+        if raw.starts_with("+++") {
+            let parts: Vec<&str> = raw.splitn(3, "+++").collect();
+            if parts.len() >= 3 {
+                let frontmatter_str = parts[1].trim();
+                if let Ok(toml_value) = toml::from_str::<toml::Value>(frontmatter_str) {
+                    if let Ok(json_value) = serde_json::to_value(toml_value) {
+                        if let Ok(frontmatter) = serde_json::from_value::<FrontmatterYaml>(json_value) {
+                            let content = parts[2].trim().to_string();
+                            return Ok((Self { frontmatter: frontmatter.into(), content }, false));
+                        }
+                    }
+                }
+            }
+        }
+
+        // JSON frontmatter: { ... }\ncontent
+        if raw.trim_start().starts_with('{') {
+            if let Some((frontmatter_str, content)) = split_json_frontmatter(raw) {
+                if let Ok(frontmatter) = serde_yaml::from_str::<FrontmatterYaml>(&frontmatter_str) {
+                    return Ok((Self { frontmatter: frontmatter.into(), content }, false));
+                }
+            }
+        }
+
         // Alternative format: frontmatter\n---\ncontent (without opening ---)
-        // This is used by some Hexo themes
+        // This is used by some Hugo content workflows
         if let Some(separator_pos) = raw.find("\n---") {
             let frontmatter_str = &raw[..separator_pos].trim();
             // Check if this looks like YAML frontmatter (contains "title:" or "date:")
@@ -132,6 +168,7 @@ impl MarkdownDocument {
             layout: None,
             permalink: None,
             description: None,
+            draft: None,
             custom_fields: HashMap::new(),
         };
 
@@ -141,6 +178,33 @@ impl MarkdownDocument {
         }, true))
     }
 
+}
+
+fn split_json_frontmatter(raw: &str) -> Option<(String, String)> {
+    let mut depth = 0usize;
+    let mut end_idx = None;
+
+    for (idx, ch) in raw.char_indices() {
+        match ch {
+            '{' => depth += 1,
+            '}' => {
+                if depth > 0 {
+                    depth -= 1;
+                    if depth == 0 {
+                        end_idx = Some(idx);
+                        break;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    end_idx.map(|idx| {
+        let frontmatter_str = raw[..=idx].trim().to_string();
+        let content = raw[idx + 1..].trim().to_string();
+        (frontmatter_str, content)
+    })
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -269,7 +333,7 @@ impl Post {
             let file_date = chrono::DateTime::<chrono::Local>::from(
                 metadata.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH)
             );
-            doc.frontmatter.date = file_date.format("%Y-%m-%d %H:%M:%S").to_string();
+            doc.frontmatter.date = file_date.to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
         }
 
         // Generate ID (relative path from source/_posts/)

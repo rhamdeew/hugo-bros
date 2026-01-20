@@ -1,30 +1,29 @@
-# Hex Tool
+# Hugo Bros
 
-Hex Tool is a desktop GUI editor for Hexo blogs built with Tauri, SvelteKit, and TypeScript. It provides a fast, native-feeling workflow for editing posts and managing content while keeping the project structure on disk.
+Hugo Bros is a desktop GUI editor for Hugo sites built with Tauri, SvelteKit, and TypeScript. It provides a fast, native-feeling workflow for editing posts and managing content while keeping the project structure on disk.
 
-![Hex Tool screenshot](https://github.com/user-attachments/assets/5ab82e89-0988-41e4-9e79-8bef137bf529)
+![Hugo Bros screenshot](https://github.com/user-attachments/assets/5ab82e89-0988-41e4-9e79-8bef137bf529)
 
 ## Usage
 
 1. Download a build for your platform from the "Releases" page.
-2. Launch the app and select your Hexo project folder (the one with `package.json` and `source/`).
+2. Launch the app and select your Hugo project folder (the one with `config.*` or `hugo.*` and `content/`).
 3. Manage posts, pages, and drafts, then edit content with live frontmatter controls.
-4. Use the Hexo controls to run `hexo server`, `hexo generate`, `hexo clean`, and `hexo deploy` from the UI.
+4. Use the Hugo controls to run `hugo server`, `hugo`, `hugo --gc --cleanDestinationDir`, and `hugo deploy` from the UI.
 
-### Requirements for Hexo Commands
+### Requirements for Hugo Commands
 
-Hexo commands run through `npx hexo`, so your blog should have dependencies installed:
+Hugo commands run through the `hugo` CLI, so Hugo needs to be installed:
 
 ```sh
-cd /path/to/your/hexo/blog
-npm install
+hugo version
 ```
 
-If you only edit Markdown files, the app still works without running Hexo commands.
+If you only edit Markdown files, the app still works without running Hugo commands.
 
 ### Frontmatter Configuration (Optional)
 
-Hex Tool supports custom frontmatter fields via `frontmatter-config.json` in the project root. You can generate a starter config from existing posts using the "Generate frontmatter config" action in the app.
+Hugo Bros supports custom frontmatter fields via `.hugo-bros/frontmatter-config.json` in the project root. You can generate a starter config from existing posts using the "Generate frontmatter config" action in the app.
 
 ## Development
 
@@ -75,4 +74,4 @@ npm run dev
 - `src/`: SvelteKit frontend (`routes/` and `lib/`).
 - `src-tauri/`: Rust backend and Tauri configuration.
 - `static/`: static assets served by SvelteKit.
-- `example_blog/`: sample Hexo blog for local testing.
+- `example_blog/`: sample Hugo site for local testing.

@@ -1,7 +1,7 @@
 {
-  "name": "hex-tool",
-  "version": "0.1.5",
-  "description": "GUI editor for Hexo blogs built with Tauri and Svelte",
+  "name": "hugo-bros",
+  "version": "0.1.6",
+  "description": "GUI editor for Hugo sites built with Tauri and Svelte",
   "type": "module",
   "scripts": {
     "dev": "vite dev",
