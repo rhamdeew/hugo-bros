@@ -219,10 +219,27 @@
 
 <!-- Command Output Modal -->
 {#if showCommandOutput && commandOutput}
-  <div class="modal-overlay" onclick={closeOutput}>
-    <div class="modal-content" onclick={(e) => e.stopPropagation()}>
+  <div
+    class="modal-overlay"
+    role="presentation"
+    onclick={closeOutput}
+    onkeydown={(e) => {
+      if (e.key === 'Escape') {
+        closeOutput();
+      }
+    }}
+  >
+    <div
+      class="modal-content"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="command-output-title"
+      tabindex="-1"
+      onclick={(e) => e.stopPropagation()}
+      onkeydown={(e) => e.stopPropagation()}
+    >
       <div class="modal-header">
-        <h3>Command Output</h3>
+        <h3 id="command-output-title">Command Output</h3>
         <button class="close-btn" onclick={closeOutput} type="button">&times;</button>
       </div>
       <div class="modal-body">

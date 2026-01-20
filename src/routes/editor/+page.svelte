@@ -826,7 +826,7 @@
 
             <!-- Tags -->
             <div class="field-group">
-              <label>Tags</label>
+              <span class="field-label">Tags</span>
               <div class="chips-list">
                 {#each post.frontmatter.tags || [] as tag, index}
                   <span class="chip tag-chip">
@@ -852,7 +852,7 @@
 
             <!-- Categories -->
             <div class="field-group">
-              <label>Categories</label>
+              <span class="field-label">Categories</span>
               <div class="chips-list">
                 {#each post.frontmatter.categories || [] as category, index}
                   <span class="chip category-chip">
@@ -925,10 +925,18 @@
                   <div class="custom-field-group">
                     <div
                       class="custom-field-group-header"
+                      role="button"
+                      tabindex="0"
                       onclick={() => toggleCustomGroup(group.name)}
+                      onkeydown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          toggleCustomGroup(group.name);
+                        }
+                      }}
                     >
                       <span>{group.label}</span>
-                      <button class="group-toggle" type="button">
+                      <button class="group-toggle" type="button" tabindex="-1">
                         {#if customGroupCollapsed[group.name] ?? group.collapsed}
                           <ChevronDown size={16} />
                         {:else}
@@ -1100,9 +1108,15 @@
 
         <!-- Resize Handle -->
         {#if showPreview}
-          <div class="resize-handle" onmousedown={startResize} class:resizing={isResizing}>
+          <button
+            type="button"
+            class="resize-handle"
+            onmousedown={startResize}
+            class:resizing={isResizing}
+            aria-label="Resize editor panels"
+          >
             <GripVertical size={16} />
-          </div>
+          </button>
         {/if}
 
         <!-- Preview Pane -->
@@ -1771,11 +1785,6 @@
     max-height: 120px;
   }
 
-  .alt-input {
-    margin-top: 0.375rem;
-    font-size: 0.8125rem !important;
-  }
-
   /* Editor Panels */
   .editor-panels {
     flex: 1;
@@ -1786,10 +1795,6 @@
 
   :global(.dark .editor-panels) {
     background-color: #2d2d2d;
-  }
-
-  .editor-panels.full-width {
-    /* No change needed */
   }
 
   .editor-pane,

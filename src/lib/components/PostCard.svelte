@@ -86,19 +86,7 @@
   let displayTags = $derived(post.frontmatter.tags?.slice(0, 3) || []);
 </script>
 
-<div
-  class="post-card"
-  class:clickable={!!onClick}
-  onclick={() => onClick?.()}
-  role={onClick ? 'button' : 'article'}
-  tabindex={onClick ? 0 : undefined}
-  onkeydown={(e) => {
-    if (onClick && (e.key === 'Enter' || e.key === ' ')) {
-      e.preventDefault();
-      onClick();
-    }
-  }}
->
+{#snippet cardContent()}
   <!-- Image -->
   {#if imageUrl}
     <div class="post-image">
@@ -113,10 +101,10 @@
   <!-- Content -->
   <div class="post-content">
     <h3 class="post-title">{post.title}</h3>
-  <p class="post-date">
-    <Calendar size={14} />
-    {formatDate(post.date || post.frontmatter.date || post.modifiedAt)}
-  </p>
+    <p class="post-date">
+      <Calendar size={14} />
+      {formatDate(post.date || post.frontmatter.date || post.modifiedAt)}
+    </p>
     <p class="post-preview">{previewText}</p>
 
     {#if displayTags.length > 0}
@@ -133,11 +121,14 @@
 
   <!-- Actions -->
   {#if onDelete || onDuplicate}
-    <div class="post-actions" onclick={(e) => e.stopPropagation()}>
+    <div class="post-actions">
       {#if onDuplicate}
         <button
           class="action-btn"
-          onclick={onDuplicate}
+          onclick={(e) => {
+            e.stopPropagation();
+            onDuplicate();
+          }}
           title="Duplicate post"
           type="button"
         >
@@ -147,7 +138,10 @@
       {#if onDelete}
         <button
           class="action-btn danger"
-          onclick={onDelete}
+          onclick={(e) => {
+            e.stopPropagation();
+            onDelete();
+          }}
           title="Delete post"
           type="button"
         >
@@ -156,7 +150,27 @@
       {/if}
     </div>
   {/if}
-</div>
+{/snippet}
+
+{#if onClick}
+  <button
+    type="button"
+    class="post-card clickable"
+    onclick={() => onClick()}
+    onkeydown={(e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        onClick();
+      }
+    }}
+  >
+    {@render cardContent()}
+  </button>
+{:else}
+  <div class="post-card" role="article">
+    {@render cardContent()}
+  </div>
+{/if}
 
 <style>
   .post-card {
@@ -264,6 +278,7 @@
     margin: 0;
     display: -webkit-box;
     -webkit-line-clamp: 3;
+    line-clamp: 3;
     -webkit-box-orient: vertical;
     overflow: hidden;
   }

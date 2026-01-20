@@ -375,10 +375,27 @@
 
   <!-- New Post Modal -->
   {#if showCreateDialog}
-    <div class="modal-overlay" onclick={closeCreateDialog}>
-      <div class="modal-content" onclick={(e) => e.stopPropagation()}>
+    <div
+      class="modal-overlay"
+      role="presentation"
+      onclick={closeCreateDialog}
+      onkeydown={(e) => {
+        if (e.key === 'Escape') {
+          closeCreateDialog();
+        }
+      }}
+    >
+      <div
+        class="modal-content"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="create-dialog-title"
+        tabindex="-1"
+        onclick={(e) => e.stopPropagation()}
+        onkeydown={(e) => e.stopPropagation()}
+      >
         <div class="modal-header">
-          <h3>Create {createKind}</h3>
+          <h3 id="create-dialog-title">Create {createKind}</h3>
           <button class="close-btn" onclick={closeCreateDialog} type="button" aria-label="Close">
             <X size={20} />
           </button>

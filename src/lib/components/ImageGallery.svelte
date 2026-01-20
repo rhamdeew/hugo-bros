@@ -205,11 +205,28 @@
 </script>
 
 {#if open}
-  <div class="modal-overlay" onclick={() => (open = false)}>
-    <div class="modal-content" onclick={(e) => e.stopPropagation()}>
+  <div
+    class="modal-overlay"
+    role="presentation"
+    onclick={() => (open = false)}
+    onkeydown={(e) => {
+      if (e.key === 'Escape') {
+        open = false;
+      }
+    }}
+  >
+    <div
+      class="modal-content"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="gallery-title"
+      tabindex="-1"
+      onclick={(e) => e.stopPropagation()}
+      onkeydown={(e) => e.stopPropagation()}
+    >
       <!-- Header -->
       <div class="modal-header">
-        <h2 class="modal-title">Image Gallery</h2>
+        <h2 id="gallery-title" class="modal-title">Image Gallery</h2>
         <button
           class="close-btn"
           onclick={() => (open = false)}
@@ -543,12 +560,6 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
-  }
-
-  .search-icon {
-    position: static;
-    color: #9ca3af;
-    flex-shrink: 0;
   }
 
   .search-input {
@@ -917,15 +928,6 @@
     justify-content: center;
     padding: 3rem;
     text-align: center;
-  }
-
-  .empty-icon {
-    color: #d1d5db;
-    margin-bottom: 1rem;
-  }
-
-  :global(.dark .empty-icon) {
-    color: #525252;
   }
 
   .empty-gallery h3 {

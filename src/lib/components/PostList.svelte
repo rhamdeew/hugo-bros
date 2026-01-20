@@ -182,7 +182,7 @@
       <!-- Tag Filter -->
       {#if allTags.length > 0}
         <div class="filter-group">
-          <label class="filter-label">Filter by tag:</label>
+          <span class="filter-label">Filter by tag:</span>
           <div class="tags-list">
             <button
               class="tag-filter"
@@ -208,8 +208,8 @@
 
       <!-- Sort Options -->
       <div class="filter-group">
-        <label class="filter-label">Sort by:</label>
-        <select class="sort-select" bind:value={sortBy}>
+        <label class="filter-label" for="sort-select">Sort by:</label>
+        <select id="sort-select" class="sort-select" bind:value={sortBy}>
           <option value="modified">Last modified</option>
           <option value="date">Publish date</option>
           <option value="title">Title</option>
@@ -380,12 +380,6 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
-  }
-
-  .search-icon {
-    position: static;
-    color: #9ca3af;
-    flex-shrink: 0;
   }
 
   .search-input {
