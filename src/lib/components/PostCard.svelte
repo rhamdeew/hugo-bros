@@ -242,6 +242,7 @@
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
+    text-align: left;
   }
 
   .post-title {

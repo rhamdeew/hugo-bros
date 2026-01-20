@@ -626,9 +626,6 @@
         <ArrowLeft size={20} />
       </button>
       <h1 class="post-title">{postTitle}</h1>
-      {#if hasUnsavedChanges}
-        <span class="unsaved-badge">Unsaved</span>
-      {/if}
     </div>
 
     <div class="header-center">
@@ -1220,21 +1217,6 @@
   :global(.dark .post-title) {
     color: #f5f5f5;
   }
-
-  .unsaved-badge {
-    font-size: 0.75rem;
-    padding: 0.125rem 0.5rem;
-    background-color: #fef3c7;
-    color: #92400e;
-    border-radius: 9999px;
-    flex-shrink: 0;
-  }
-
-  :global(.dark .unsaved-badge) {
-    background-color: #78350f;
-    color: #fef3c7;
-  }
-
   /* Toolbar */
   .header-center {
     flex: 1;
