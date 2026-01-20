@@ -1,6 +1,6 @@
 {
   "name": "hugo-bros",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "GUI editor for Hugo sites built with Tauri and Svelte",
   "type": "module",
   "scripts": {
