@@ -189,14 +189,14 @@
     }
   }
 
-  let breadcrumbSegments = $derived(() => {
+  let breadcrumbSegments = $derived((() => {
     if (!currentDir) return [];
     const parts = currentDir.split('/').filter(Boolean);
     return parts.map((segment, index) => ({
       name: segment,
       path: parts.slice(0, index + 1).join('/')
     }));
-  });
+  })());
 
   function getParentDir() {
     if (!breadcrumbSegments.length) return '';
@@ -365,7 +365,7 @@
                     // Hide broken image and show placeholder
                     const img = e.target as HTMLImageElement;
                     img.style.display = 'none';
-                    const placeholder = img.nextElementSibling;
+                    const placeholder = img.nextElementSibling as HTMLElement | null;
                     if (placeholder) placeholder.style.display = 'flex';
                   }}
                 />

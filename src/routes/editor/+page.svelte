@@ -36,10 +36,10 @@
   import { convertFileSrc } from '@tauri-apps/api/core';
   import ImageGallery from '$lib/components/ImageGallery.svelte';
   import { backend } from '$lib/services/backend';
-  import type { Post, StaticEntry, FrontmatterConfig } from '$lib/types';
+  import type { Post, Page, Draft, StaticEntry, FrontmatterConfig } from '$lib/types';
 
   // State
-  let post = $state<Post | null>(null);
+  let post = $state<Post | Page | Draft | null>(null);
   let markdownContent = $state('');
   let originalContent = $state('');
   let hasUnsavedChanges = $state(false);
@@ -341,11 +341,11 @@
       post.frontmatter.title = post.title;
 
       if (entryType === 'page') {
-        await backend.savePage(post);
+        await backend.savePage(post as Page);
       } else if (entryType === 'draft') {
-        await backend.saveDraft(post);
+        await backend.saveDraft(post as Draft);
       } else {
-        await backend.savePost(post);
+        await backend.savePost(post as Post);
       }
 
       originalContent = markdownContent;
@@ -786,8 +786,10 @@
                 type="datetime-local"
                 value={formatDatetimeLocal(post.frontmatter.date)}
                 oninput={(e) => {
-                  post.frontmatter.date = toRfc3339Local((e.target as HTMLInputElement).value);
-                  handleFrontmatterChange();
+                  if (post) {
+                    post.frontmatter.date = toRfc3339Local((e.target as HTMLInputElement).value);
+                    handleFrontmatterChange();
+                  }
                 }}
               />
             </div>
@@ -800,10 +802,12 @@
                 type="datetime-local"
                 value={formatDatetimeLocal(post.frontmatter.updated)}
                 oninput={(e) => {
-                  post.frontmatter.updated = normalizeOptionalDatetimeLocal(
-                    (e.target as HTMLInputElement).value
-                  );
-                  handleFrontmatterChange();
+                  if (post) {
+                    post.frontmatter.updated = normalizeOptionalDatetimeLocal(
+                      (e.target as HTMLInputElement).value
+                    );
+                    handleFrontmatterChange();
+                  }
                 }}
               />
             </div>
@@ -904,9 +908,11 @@
                   type="checkbox"
                   checked={post.frontmatter.comments ?? false}
                   onchange={(e) => {
-                    const target = e.target as HTMLInputElement;
-                    post.frontmatter.comments = target.checked;
-                    handleFrontmatterChange();
+                    if (post) {
+                      const target = e.target as HTMLInputElement;
+                      post.frontmatter.comments = target.checked;
+                      handleFrontmatterChange();
+                    }
                   }}
                 />
                 <span>Allow comments</span>

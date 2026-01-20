@@ -30,7 +30,7 @@
   let previewImageWarning = $derived(
     frontmatterConfig?.previewImageField
       ? frontmatterConfig.customFields?.some(
-          (field) => field.name === frontmatterConfig.previewImageField
+          (field) => field.name === frontmatterConfig?.previewImageField
         )
         ? ''
         : `Preview image field "${frontmatterConfig.previewImageField}" not found in customFields.`

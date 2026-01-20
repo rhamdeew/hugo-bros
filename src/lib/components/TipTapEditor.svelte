@@ -65,7 +65,7 @@
       // Only update if content is actually different
       if (currentHTML !== htmlContent) {
         isUpdatingFromExternal = true;
-        editor.commands.setContent(htmlContent, false);
+        editor.commands.setContent(htmlContent, { emitUpdate: false });
         // Reset the flag after a brief delay
         Promise.resolve().then(() => {
           isUpdatingFromExternal = false;

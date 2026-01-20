@@ -118,7 +118,7 @@
       showCommandOutput = true;
 
     } catch (err) {
-      console.error(`Failed to run ${command}:`, err);
+      console.error(`Failed to run ${commandName}:`, err);
       await message(
         `Failed to run ${commandName}: ` + (err instanceof Error ? err.message : 'Unknown error'),
         { title: 'Hugo Bros', kind: 'error' }
