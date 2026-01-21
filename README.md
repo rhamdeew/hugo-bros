@@ -2,7 +2,7 @@
 
 Hugo Bros is a desktop GUI editor for Hugo sites built with Tauri, SvelteKit, and TypeScript. It provides a fast, native-feeling workflow for editing posts and managing content while keeping the project structure on disk.
 
-![Hugo Bros screenshot](https://github.com/user-attachments/assets/5ab82e89-0988-41e4-9e79-8bef137bf529)
+![Hugo Bros screenshot](https://github.com/user-attachments/assets/6af349fa-d2ad-4e52-8874-98c7cfc49e0e)
 
 ## Usage
 
