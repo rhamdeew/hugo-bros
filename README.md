@@ -2,7 +2,7 @@
 
 Hugo Bros is a desktop GUI editor for Hugo sites built with Tauri, SvelteKit, and TypeScript. It provides a fast, native-feeling workflow for editing posts and managing content while keeping the project structure on disk.
 
-![Hugo Bros screenshot](https://github.com/user-attachments/assets/6af349fa-d2ad-4e52-8874-98c7cfc49e0e)
+![Hugo Bros screenshot](https://github.com/user-attachments/assets/58252598-207b-4386-a529-170c1fd0f6d0)
 
 ## Usage
 
@@ -10,6 +10,18 @@ Hugo Bros is a desktop GUI editor for Hugo sites built with Tauri, SvelteKit, an
 2. Launch the app and select your Hugo project folder (the one with `config.*` or `hugo.*` and `content/`).
 3. Manage posts, pages, and drafts, then edit content with live frontmatter controls.
 4. Use the Hugo controls to run `hugo server`, `hugo`, `hugo --gc --cleanDestinationDir`, and `hugo deploy` from the UI.
+
+### Fixing macOS Gatekeeper Issue
+
+If macOS prevents you from opening the app with a message like **"Hugo Bros" cannot be opened because the developer cannot be verified**, you need to remove the quarantine attribute that macOS applies to downloaded applications.
+
+Run this command in Terminal:
+
+```sh
+xattr -dr com.apple.quarantine "/Applications/Hugo Bros.app"
+```
+
+This removes the quarantine flag and allows the app to run. You only need to do this once after installing Hugo Bros.
 
 ### Requirements for Hugo Commands
 
