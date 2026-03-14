@@ -47,7 +47,7 @@
 
   $effect(() => {
     if (!open) return;
-    currentDir;
+    void currentDir;
     void loadEntries();
   });
 
@@ -300,7 +300,7 @@
         {#if currentDir}
           <span class="breadcrumb-separator">/</span>
         {/if}
-        {#each breadcrumbSegments as segment}
+        {#each breadcrumbSegments as segment (segment.path)}
           <button
             class="breadcrumb-link"
             onclick={() => navigateToDir(segment.path)}

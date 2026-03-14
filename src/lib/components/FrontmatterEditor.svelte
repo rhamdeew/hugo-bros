@@ -53,14 +53,6 @@
     }
   }
 
-  function formatDate(dateString: string): string {
-    try {
-      const date = new Date(dateString);
-      return date.toISOString().slice(0, 16); // YYYY-MM-DDTHH:mm
-    } catch {
-      return dateString;
-    }
-  }
 </script>
 
 <div class="frontmatter-editor">
@@ -261,7 +253,7 @@
       <div class="field-group">
         <span class="field-label">Custom Fields</span>
         <div class="custom-fields-list">
-          {#each Object.entries(frontmatter.customFields || {}) as [key, value]}
+          {#each Object.entries(frontmatter.customFields || {}) as [key, _value] (key)}
             <div class="custom-field-row">
               <input type="text" class="field-input" value={key} disabled />
               <input

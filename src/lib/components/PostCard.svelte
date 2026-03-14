@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Calendar, Tag, Trash2, Copy } from 'lucide-svelte';
+  import { Calendar, Trash2, Copy } from 'lucide-svelte';
   import { convertFileSrc } from '@tauri-apps/api/core';
   import { backend } from '$lib/services/backend';
   import type { FrontmatterConfig, Post } from '$lib/types';
@@ -109,7 +109,7 @@
 
     {#if displayTags.length > 0}
       <div class="post-tags">
-        {#each displayTags as tag}
+        {#each displayTags as tag (tag)}
           <span class="tag">#{tag}</span>
         {/each}
         {#if post.frontmatter.tags && post.frontmatter.tags.length > 3}

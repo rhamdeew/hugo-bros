@@ -213,11 +213,6 @@
     }
   }
 
-  function openImageGalleryForPost(fieldName: string, post: Post) {
-    pendingImageField = { fieldName, post };
-    showImageGallery = true;
-  }
-
   async function handleGenerateFrontmatterConfig() {
     if (isGeneratingFrontmatterConfig) return;
     isGeneratingFrontmatterConfig = true;

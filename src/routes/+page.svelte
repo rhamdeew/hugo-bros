@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { CheckCircle, FolderOpen, Clock } from 'lucide-svelte';
+  import { FolderOpen, Clock } from 'lucide-svelte';
   import { backend } from '$lib/services/backend';
   import type { AppConfig } from '$lib/types';
   import { goto } from '$app/navigation';

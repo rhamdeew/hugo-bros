@@ -74,7 +74,9 @@
     editor?.chain().focus().redo().run();
   }
 
-  $: isActive = (name: string, attrs = {}) => editor?.isActive(name, attrs) || false;
+  function isActive(name: string, attrs = {}) {
+    return editor?.isActive(name, attrs) || false;
+  }
   $: canUndo = editor?.can?.()?.undo() ?? false;
   $: canRedo = editor?.can?.()?.redo() ?? false;
 </script>
@@ -121,7 +123,7 @@
 
   <div class="toolbar-group">
     <!-- Headings -->
-    {#each headingLevels as { label, level, icon: Icon }}
+    {#each headingLevels as { label, level, icon: Icon } (level)}
       <button
         class="toolbar-btn"
         class:active={isActive('heading', { level })}

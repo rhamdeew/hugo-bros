@@ -47,7 +47,7 @@
           class: 'prose prose-sm sm:prose lg:prose-lg dark:prose-invert max-w-none focus:outline-none min-h-[400px] p-4',
         },
       },
-      onUpdate: ({ editor: e }) => {
+      onUpdate: ({ editor: _e }) => {
         if (!isUpdatingFromExternal) {
           onUpdate?.();
         }

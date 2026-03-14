@@ -27,14 +27,12 @@
     Loader2,
     ChevronDown,
     ChevronUp,
-    ChevronLeft,
-    ChevronRight,
     Plus,
     X,
     GripVertical
   } from 'lucide-svelte';
   import { convertFileSrc } from '@tauri-apps/api/core';
-  import { confirm, open } from '@tauri-apps/plugin-dialog';
+  import { confirm } from '@tauri-apps/plugin-dialog';
   import ImageGallery from '$lib/components/ImageGallery.svelte';
   import { backend } from '$lib/services/backend';
   import type { Post, Page, Draft, StaticEntry, FrontmatterConfig } from '$lib/types';
@@ -840,7 +838,7 @@
             <div class="field-group">
               <span class="field-label">Tags</span>
               <div class="chips-list">
-                {#each post.frontmatter.tags || [] as tag, index}
+                {#each post.frontmatter.tags || [] as tag, index (tag)}
                   <span class="chip tag-chip">
                     #{tag}
                     <button onclick={() => removeTag(index)} type="button" class="chip-remove">
@@ -866,7 +864,7 @@
             <div class="field-group">
               <span class="field-label">Categories</span>
               <div class="chips-list">
-                {#each post.frontmatter.categories || [] as category, index}
+                {#each post.frontmatter.categories || [] as category, index (category)}
                   <span class="chip category-chip">
                     {category}
                     <button onclick={() => removeCategory(index)} type="button" class="chip-remove">
