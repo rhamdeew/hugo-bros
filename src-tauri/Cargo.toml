@@ -1,6 +1,6 @@
 [package]
 name = "hugo-bros"
-version = "0.1.2"
+version = "0.1.10"
 description = "GUI editor for Hugo sites built with Tauri and Svelte"
 authors = ["Rail"]
 edition = "2021"
