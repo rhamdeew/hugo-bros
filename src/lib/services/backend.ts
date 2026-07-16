@@ -78,9 +78,9 @@ export class BackendService {
     return invoke<Post>('get_post', { projectPath, postId });
   }
 
-  async savePost(post: Post): Promise<void> {
+  async savePost(post: Post, renameAction: 'ask' | 'confirm' | 'skip' = 'ask'): Promise<Post> {
     const projectPath = this.ensureProject();
-    await invoke('save_post', { projectPath, post });
+    return invoke<Post>('save_post', { projectPath, post, renameAction });
   }
 
   async getPage(pageId: string): Promise<Page> {

@@ -158,16 +158,81 @@ pub fn get_post(project_path: String, post_id: String) -> Result<Post, String> {
     Post::from_file(&file_path, Path::new(&project_path))
 }
 
+#[derive(Debug, serde::Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum SavePostError {
+    /// The custom path implies a rename that hasn't been confirmed by the user yet.
+    RenameRequired { current_name: String, new_name: String },
+    /// The renamed-to filename is already taken by another post.
+    Collision { new_name: String },
+    Other { message: String },
+}
+
+impl From<String> for SavePostError {
+    fn from(message: String) -> Self {
+        SavePostError::Other { message }
+    }
+}
+
 #[command]
-pub fn save_post(_project_path: String, post: Post) -> Result<(), String> {
-    let file_path = Path::new(&post.file_path);
+pub fn save_post(
+    project_path: String,
+    mut post: Post,
+    // "ask": stop and report if a rename is needed; "confirm": perform the rename;
+    // "skip": never rename (used for autosave so it doesn't interrupt typing).
+    rename_action: String,
+) -> Result<Post, SavePostError> {
+    let mut file_path = PathBuf::from(&post.file_path);
+
+    if rename_action != "skip" {
+        if let Some(permalink) = &post.frontmatter.permalink {
+            let slug = permalink.trim_matches('/').rsplit('/').next().unwrap_or("");
+            let sanitized = sanitize_filename(slug);
+
+            if !sanitized.is_empty() {
+                let current_stem = file_path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+                if sanitized != current_stem {
+                    let new_name = format!("{}.md", sanitized);
+                    let new_path = file_path.with_file_name(&new_name);
+
+                    // Guard against another post already sitting at that path.
+                    if new_path.exists() {
+                        return Err(SavePostError::Collision { new_name });
+                    }
+
+                    if rename_action != "confirm" {
+                        let current_name = file_path
+                            .file_name()
+                            .and_then(|s| s.to_str())
+                            .unwrap_or("")
+                            .to_string();
+                        return Err(SavePostError::RenameRequired { current_name, new_name });
+                    }
+
+                    fs::rename(&file_path, &new_path).map_err(|e| SavePostError::Other {
+                        message: format!("Failed to rename post file: {}", e),
+                    })?;
+                    file_path = new_path;
+                }
+            }
+        }
+    }
+
+    post.file_path = file_path.to_string_lossy().to_string();
+    post.id = file_path
+        .strip_prefix(&project_path)
+        .ok()
+        .and_then(|p| p.to_str())
+        .unwrap_or(&post.file_path)
+        .to_string();
 
     let markdown = post.to_markdown()?;
 
-    fs::write(file_path, markdown)
-        .map_err(|e| format!("Failed to save post: {}", e))?;
+    fs::write(&file_path, markdown).map_err(|e| SavePostError::Other {
+        message: format!("Failed to save post: {}", e),
+    })?;
 
-    Ok(())
+    Ok(post)
 }
 
 #[command]

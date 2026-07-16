@@ -11,6 +11,11 @@ export interface Post {
   modifiedAt: number;
 }
 
+export type SavePostError =
+  | { kind: 'renameRequired'; currentName: string; newName: string }
+  | { kind: 'collision'; newName: string }
+  | { kind: 'other'; message: string };
+
 export interface Frontmatter {
   title: string;
   date: string;

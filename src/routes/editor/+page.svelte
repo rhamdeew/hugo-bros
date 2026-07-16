@@ -35,7 +35,7 @@
   import { confirm } from '@tauri-apps/plugin-dialog';
   import ImageGallery from '$lib/components/ImageGallery.svelte';
   import { backend } from '$lib/services/backend';
-  import type { Post, Page, Draft, StaticEntry, FrontmatterConfig } from '$lib/types';
+  import type { Post, Page, Draft, StaticEntry, FrontmatterConfig, SavePostError } from '$lib/types';
 
   // State
   let post = $state<Post | Page | Draft | null>(null);
@@ -291,7 +291,7 @@
     // Setup auto-save (every 30 seconds)
     autoSaveTimer = setInterval(() => {
       if (hasUnsavedChanges && saveStatus === 'unsaved') {
-        savePost();
+        savePost(true);
       }
     }, 30000);
 
@@ -339,7 +339,11 @@
     saveStatus = hasUnsavedChanges ? 'unsaved' : 'saved';
   }
 
-  async function savePost() {
+  function isSavePostError(err: unknown): err is SavePostError {
+    return typeof err === 'object' && err !== null && 'kind' in err;
+  }
+
+  async function savePost(isAutoSave = false) {
     if (!post) return;
 
     saveStatus = 'saving';
@@ -358,7 +362,44 @@
       } else if (entryType === 'draft') {
         await backend.saveDraft(post as Draft);
       } else {
-        await backend.savePost(post as Post);
+        // Autosave never renames the file (would be jarring mid-typing); it
+        // only kicks in on an explicit save, and only after the user confirms.
+        let savedPost: Post;
+        try {
+          savedPost = await backend.savePost(post as Post, isAutoSave ? 'skip' : 'ask');
+        } catch (err) {
+          if (!isSavePostError(err)) throw err;
+
+          if (err.kind === 'renameRequired') {
+            const proceed = await confirm(
+              `The custom path means this post's file should be renamed from "${err.currentName}" to "${err.newName}". Rename it now?`
+            );
+            if (!proceed) {
+              saveStatus = 'unsaved';
+              saveMessage = '';
+              return;
+            }
+            savedPost = await backend.savePost(post as Post, 'confirm');
+          } else if (err.kind === 'collision') {
+            throw new Error(
+              `Can't save: a file named "${err.newName}" already exists. Choose a different custom path.`
+            );
+          } else {
+            throw new Error(err.message);
+          }
+        }
+
+        if (savedPost.id !== post.id) {
+          post.id = savedPost.id;
+          post.filePath = savedPost.filePath;
+          const url = new URL(window.location.href);
+          url.searchParams.set('id', savedPost.id);
+          await goto(`${url.pathname}${url.search}${url.hash}`, {
+            replaceState: true,
+            noScroll: true,
+            keepFocus: true
+          });
+        }
       }
 
       originalContent = markdownContent;
@@ -744,7 +785,7 @@
         {/if}
       </div>
 
-      <button onclick={savePost} class="save-btn" title="Save (Ctrl+S)" type="button">
+      <button onclick={() => savePost()} class="save-btn" title="Save (Ctrl+S)" type="button">
         <Save size={18} />
         <span>Save</span>
       </button>
