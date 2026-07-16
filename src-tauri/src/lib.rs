@@ -16,6 +16,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             select_project_folder,
+            activate_project,
             get_project_config,
             get_frontmatter_config,
             generate_frontmatter_config_command,

@@ -11,6 +11,16 @@ lazy_static::lazy_static! {
     static ref HUGO_SERVERS: Arc<Mutex<HashMap<String, Child>>> = Arc::new(Mutex::new(HashMap::new()));
 }
 
+/// Locks `HUGO_SERVERS`, recovering from poisoning instead of panicking.
+///
+/// A panic elsewhere while the lock was held would otherwise poison it
+/// permanently, bricking every Hugo-server command for the rest of the
+/// session; the map's own operations (insert/remove/contains_key) can't
+/// leave it in a state that's unsafe to keep using.
+fn lock_servers() -> std::sync::MutexGuard<'static, HashMap<String, Child>> {
+    HUGO_SERVERS.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 pub struct HugoProject {
     pub path: PathBuf,
 }
@@ -110,15 +120,14 @@ impl HugoProject {
     pub fn start_server(&self) -> Result<String, String> {
         let server_id = self.path.to_string_lossy().to_string();
 
-        // Check if server is already running
-        {
-            let servers = HUGO_SERVERS.lock().unwrap();
-            if servers.contains_key(&server_id) {
-                return Err("Server is already running".to_string());
-            }
+        // Hold the lock across the check-and-spawn-and-insert so two
+        // concurrent calls can't both pass the "already running" check
+        // before either one inserts, which would leak a duplicate process.
+        let mut servers = lock_servers();
+        if servers.contains_key(&server_id) {
+            return Err("Server is already running".to_string());
         }
 
-        // Start hugo server
         let child = Command::new("hugo")
             .arg("server")
             .current_dir(&self.path)
@@ -128,18 +137,14 @@ impl HugoProject {
             .spawn()
             .map_err(|e| format!("Failed to start hugo server: {}", e))?;
 
-        // Store the child process
-        {
-            let mut servers = HUGO_SERVERS.lock().unwrap();
-            servers.insert(server_id.clone(), child);
-        }
+        servers.insert(server_id.clone(), child);
 
         Ok(server_id)
     }
 
     /// Stop running hugo server
     pub fn stop_server(server_id: &str) -> Result<(), String> {
-        let mut servers = HUGO_SERVERS.lock().unwrap();
+        let mut servers = lock_servers();
 
         if let Some(mut child) = servers.remove(server_id) {
             child.kill()
@@ -153,7 +158,7 @@ impl HugoProject {
     /// Check if server is running
     pub fn is_server_running(&self) -> bool {
         let server_id = self.path.to_string_lossy().to_string();
-        let servers = HUGO_SERVERS.lock().unwrap();
+        let servers = lock_servers();
         servers.contains_key(&server_id)
     }
 }

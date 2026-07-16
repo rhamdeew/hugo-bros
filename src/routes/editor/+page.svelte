@@ -32,6 +32,7 @@
     GripVertical
   } from 'lucide-svelte';
   import { convertFileSrc } from '@tauri-apps/api/core';
+  import { getCurrentWebview } from '@tauri-apps/api/webview';
   import { confirm } from '@tauri-apps/plugin-dialog';
   import ImageGallery from '$lib/components/ImageGallery.svelte';
   import { backend } from '$lib/services/backend';
@@ -61,10 +62,29 @@
   let shortcutsCleanup: (() => void) | null = null;
   let frontmatterConfig = $state<FrontmatterConfig | null>(null);
   let customGroupCollapsed = $state<Record<string, boolean>>({});
+  let dragActive = $state(false);
+  let droppedImagePath = $state<string | null>(null);
+  let dragDropCleanup: (() => void) | null = null;
 
   // Editor refs
   let textareaRef = $state<HTMLTextAreaElement | null>(null);
   let autoSaveTimer: ReturnType<typeof setInterval> | null = null;
+
+  const DROPPABLE_IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'];
+
+  function isPositionOverTextarea(position: { x: number; y: number }): boolean {
+    if (!textareaRef) return false;
+    const rect = textareaRef.getBoundingClientRect();
+    const x = position.x / window.devicePixelRatio;
+    const y = position.y / window.devicePixelRatio;
+    return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+  }
+
+  $effect(() => {
+    if (!showImageGallery) {
+      droppedImagePath = null;
+    }
+  });
 
   // Resizable panel
   let editorWidth = $state(50); // percentage
@@ -295,6 +315,37 @@
       }
     }, 30000);
 
+    dragDropCleanup = await getCurrentWebview().onDragDropEvent((event) => {
+      if (event.payload.type === 'leave') {
+        dragActive = false;
+        return;
+      }
+
+      if (event.payload.type === 'enter' || event.payload.type === 'over') {
+        dragActive = isPositionOverTextarea(event.payload.position);
+        return;
+      }
+
+      if (event.payload.type === 'drop') {
+        dragActive = false;
+        if (showImageGallery) return;
+        if (!isPositionOverTextarea(event.payload.position)) return;
+
+        const path = event.payload.paths[0];
+        if (!path) return;
+
+        const extension = path.split('.').pop()?.toLowerCase();
+        if (!extension || !DROPPABLE_IMAGE_EXTENSIONS.includes(extension)) {
+          alert(`Only image files can be dropped here (${DROPPABLE_IMAGE_EXTENSIONS.join(', ')}).`);
+          return;
+        }
+
+        droppedImagePath = path;
+        pendingImageField = { kind: 'content' };
+        showImageGallery = true;
+      }
+    });
+
   });
 
   onDestroy(() => {
@@ -303,6 +354,9 @@
     }
     if (autoSaveTimer) {
       clearInterval(autoSaveTimer);
+    }
+    if (dragDropCleanup) {
+      dragDropCleanup();
     }
   });
 
@@ -1152,6 +1206,7 @@
             bind:value={markdownContent}
             oninput={handleContentChange}
             class="markdown-editor"
+            class:drag-active={dragActive}
             placeholder="Write your content in Markdown..."
             spellcheck="true"
           ></textarea>
@@ -1190,6 +1245,7 @@
   <ImageGallery
     bind:open={showImageGallery}
     onSelect={handleImageSelect}
+    dropUploadPath={droppedImagePath}
   />
 </div>
 
@@ -1888,6 +1944,16 @@
 
   .markdown-editor:focus {
     outline: none;
+  }
+
+  .markdown-editor.drag-active {
+    outline: 2px dashed #3b82f6;
+    outline-offset: -2px;
+    background-color: #eff6ff;
+  }
+
+  :global(.dark .markdown-editor.drag-active) {
+    background-color: #1e3a5f;
   }
 
   .markdown-editor::placeholder {

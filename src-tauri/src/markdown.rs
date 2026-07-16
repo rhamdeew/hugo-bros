@@ -341,7 +341,7 @@ impl Post {
             .strip_prefix(project_path)
             .ok()
             .and_then(|p| p.to_str())
-            .unwrap_or_else(|| file_path.to_str().unwrap_or(""))
+            .ok_or_else(|| format!("Post file {:?} is not inside the project directory", file_path))?
             .to_string();
 
         Ok(Self {

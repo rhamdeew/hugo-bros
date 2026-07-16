@@ -12,12 +12,20 @@
   interface Props {
     open: boolean;
     onSelect?: (entry: StaticEntry) => void;
+    dropUploadPath?: string | null;
   }
 
   let {
     open = $bindable(false),
-    onSelect
+    onSelect,
+    dropUploadPath = null
   }: Props = $props();
+
+  let uploadingDrop = $state(false);
+
+  let dropFileName = $derived(
+    dropUploadPath ? dropUploadPath.split(/[\\/]/).pop() || dropUploadPath : ''
+  );
 
   let searchQuery = $state('');
   let sortBy = $state<'name' | 'date' | 'size'>('date');
@@ -189,6 +197,29 @@
     }
   }
 
+  async function handleUploadDropped() {
+    if (!dropUploadPath || uploadingDrop) return;
+    uploadingDrop = true;
+    try {
+      const url = await backend.copyImageToProject(dropUploadPath, currentDir);
+      onSelect?.({
+        name: dropFileName,
+        path: '',
+        kind: 'file',
+        size: 0,
+        createdAt: Date.now(),
+        modifiedAt: Date.now(),
+        url,
+        fullPath: ''
+      });
+      open = false;
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to upload image');
+    } finally {
+      uploadingDrop = false;
+    }
+  }
+
   let breadcrumbSegments = $derived((() => {
     if (!currentDir) return [];
     const parts = currentDir.split('/').filter(Boolean);
@@ -236,6 +267,23 @@
           <X size={24} />
         </button>
       </div>
+
+      {#if dropUploadPath}
+        <div class="drop-banner">
+          <p class="drop-banner-text">
+            Uploading <strong>{dropFileName}</strong> &mdash; choose a destination folder
+          </p>
+          <button
+            class="upload-btn"
+            onclick={handleUploadDropped}
+            disabled={uploadingDrop}
+            type="button"
+          >
+            <UploadIcon size={18} />
+            <span>{uploadingDrop ? 'Uploading…' : 'Upload Here'}</span>
+          </button>
+        </div>
+      {/if}
 
       <!-- Search and Controls -->
       <div class="modal-controls">
@@ -540,6 +588,37 @@
 
   :global(.dark .close-btn:hover) {
     background-color: #404040;
+  }
+
+  /* Drop Banner */
+  .drop-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.75rem 1.5rem;
+    background-color: #eff6ff;
+    border-bottom: 1px solid #bfdbfe;
+  }
+
+  :global(.dark .drop-banner) {
+    background-color: #1e3a5f;
+    border-bottom-color: #1e40af;
+  }
+
+  .drop-banner-text {
+    font-size: 0.875rem;
+    color: #1e3a8a;
+    margin: 0;
+  }
+
+  :global(.dark .drop-banner-text) {
+    color: #bfdbfe;
+  }
+
+  .drop-banner .upload-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 
   /* Controls */

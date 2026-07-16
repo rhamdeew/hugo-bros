@@ -29,7 +29,7 @@
 
   async function openRecentProject(projectPath: string) {
     try {
-      backend.setProjectPath(projectPath);
+      await backend.activateProject(projectPath);
       goto('/posts');
     } catch (err) {
       console.error('Failed to open project:', err);

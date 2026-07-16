@@ -49,6 +49,11 @@ export class BackendService {
     return path;
   }
 
+  async activateProject(path: string): Promise<void> {
+    await invoke('activate_project', { projectPath: path });
+    this.setProjectPath(path);
+  }
+
   async getProjectConfig(): Promise<HugoConfig> {
     const projectPath = this.ensureProject();
     return invoke<HugoConfig>('get_project_config', { projectPath });
