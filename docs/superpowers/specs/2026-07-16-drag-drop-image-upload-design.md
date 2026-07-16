@@ -29,13 +29,20 @@ cursor position and, on drop, the absolute file paths of the dragged files.
 
 **`src/routes/editor/+page.svelte`**
 
-- In `onMount`, register `getCurrentWebviewWindow().onDragDropEvent(...)`;
+- In `onMount`, register `getCurrentWebview().onDragDropEvent(...)`
+  (the documented pattern for this API; `getCurrentWebviewWindow()` would
+  also work since `WebviewWindow` merges in `Webview`'s methods, but
+  `getCurrentWebview()` is what the Tauri types' own usage example calls);
   unregister the listener on destroy.
-- On `over`/`enter` events: convert `event.payload.position` (physical
-  pixels) to logical pixels via `window.devicePixelRatio` and test whether it
-  falls inside the content textarea's `getBoundingClientRect()`. Toggle a
-  `dragActive` boolean used to add a dashed-border highlight class to the
-  textarea wrapper (visual feedback only).
+- The event payload is one of four variants: `enter`, `over`, `drop`, or
+  `leave` (`leave` carries no position/paths). On `over`/`enter`: convert
+  `event.payload.position` (physical pixels) to logical pixels via
+  `window.devicePixelRatio` and test whether it falls inside the content
+  textarea's `getBoundingClientRect()`. Toggle a `dragActive` boolean used to
+  add a dashed-border highlight class to the textarea wrapper (visual
+  feedback only). On `leave`: always clear `dragActive` — this fires when
+  the drag exits the webview window entirely (no further `over` events
+  follow), so without this the highlight could get stuck on.
 - On `drop` events: repeat the bounds check. Ignore the event if the drop is
   outside the textarea, or if `showImageGallery` is already `true`.
 - If inside the textarea: take `event.payload.paths[0]` (first path only —
@@ -80,6 +87,10 @@ cursor position and, on drop, the absolute file paths of the dragged files.
 - Dropping multiple files at once: only the first is used, silently.
 - Drop zones outside the content textarea (frontmatter fields, sidebar,
   etc.) are out of scope for this iteration.
+- Dropping a directory instead of a file: `paths[0]` would be a directory
+  path, which fails the image-extension check and surfaces the same
+  unsupported-file `alert()` as any other non-image drop. No special
+  handling needed beyond that.
 
 ## Error handling
 
