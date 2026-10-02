@@ -49,6 +49,27 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
+      - name: Set version from tag
+        shell: bash
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          node -e '
+            const fs = require("fs");
+            const version = process.env.TAG.replace(/^v/, "");
+            for (const file of ["package.json", "src-tauri/tauri.conf.json"]) {
+              const json = JSON.parse(fs.readFileSync(file, "utf8"));
+              json.version = version;
+              fs.writeFileSync(file, JSON.stringify(json, null, 2) + "\n");
+            }
+            const cargo = "src-tauri/Cargo.toml";
+            fs.writeFileSync(
+              cargo,
+              fs.readFileSync(cargo, "utf8").replace(/^version = ".*"$/m, `version = "${version}"`)
+            );
+            console.log(`Version set to ${version}`);
+          '
+
       - name: Build and upload release artifacts
         uses: tauri-apps/tauri-action@v0
         env:
