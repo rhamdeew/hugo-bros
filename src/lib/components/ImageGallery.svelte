@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { X, Search, Upload as UploadIcon, Trash2, Image as ImageIcon, Folder, FolderPlus, ArrowUp } from 'lucide-svelte';
+  import { X, Search, Upload as UploadIcon, Trash2, Image as ImageIcon, Folder, FolderPlus, ArrowUp, Pencil } from 'lucide-svelte';
   import { convertFileSrc } from '@tauri-apps/api/core';
-  import { open as openDialog } from '@tauri-apps/plugin-dialog';
+  import { open as openDialog, confirm } from '@tauri-apps/plugin-dialog';
   import { backend } from '$lib/services/backend';
   import type { StaticEntry } from '$lib/types';
 
@@ -36,6 +36,10 @@
   let currentDir = $state('');
   let showNewFolder = $state(false);
   let newFolderName = $state('');
+  let renamingPath = $state<string | null>(null);
+  let renameValue = $state('');
+  let renameError = $state('');
+  let renameBusy = $state(false);
 
   const resolveEntrySrc = (entry: StaticEntry) => {
     if (entry.fullPath) return convertFileSrc(entry.fullPath);
@@ -124,6 +128,7 @@
   function navigateToDir(path: string) {
     currentDir = path;
     selectedEntry = null;
+    renamingPath = null;
   }
 
   function handleSelect(entry: StaticEntry) {
@@ -147,20 +152,100 @@
     handleSelect(entry);
   }
 
+  function errorMessage(err: unknown, fallback: string): string {
+    if (err instanceof Error) return err.message;
+    return typeof err === 'string' ? err : fallback;
+  }
+
   async function handleDelete(entry: StaticEntry) {
-    const label = entry.kind === 'dir' ? 'folder' : 'file';
-    const prompt = entry.kind === 'dir'
-      ? `Delete folder "${entry.name}" and all of its contents?`
-      : `Delete "${entry.name}"?`;
-    if (!confirm(prompt)) return;
     try {
-      await backend.deleteStaticEntry(entry.path);
+      if (entry.kind === 'dir') {
+        await deleteFolder(entry);
+      } else {
+        const confirmed = await confirm(`Delete "${entry.name}"?`, {
+          title: 'Delete image',
+          kind: 'warning'
+        });
+        if (!confirmed) return;
+        await backend.deleteStaticEntry(entry.path);
+      }
       await loadEntries();
       if (selectedEntry?.path === entry.path) {
         selectedEntry = null;
       }
     } catch (err) {
-      alert(err instanceof Error ? err.message : `Failed to delete ${label}`);
+      alert(errorMessage(err, `Failed to delete ${entry.kind === 'dir' ? 'folder' : 'file'}`));
+    }
+  }
+
+  // Empty folders are deleted right away; a non-empty one needs an explicit
+  // confirmation before the backend is allowed to delete it recursively.
+  async function deleteFolder(entry: StaticEntry) {
+    try {
+      await backend.deleteStaticEntry(entry.path, false);
+    } catch (err) {
+      if (errorMessage(err, '') !== 'FOLDER_NOT_EMPTY') throw err;
+
+      const confirmed = await confirm(
+        `Folder "${entry.name}" is not empty.\n\n` +
+          `Delete the folder and everything in it? This cannot be undone.`,
+        { title: 'Delete folder', kind: 'warning', okLabel: 'Delete' }
+      );
+      if (!confirmed) return;
+      await backend.deleteStaticEntry(entry.path, true);
+    }
+  }
+
+  function startRename(entry: StaticEntry) {
+    renamingPath = entry.path;
+    renameValue = entry.name;
+    renameError = '';
+  }
+
+  function cancelRename() {
+    renamingPath = null;
+    renameError = '';
+  }
+
+  async function submitRename() {
+    const path = renamingPath;
+    if (!path || renameBusy) return;
+
+    const name = renameValue.trim();
+    const oldName = path.split('/').pop() ?? '';
+    if (!name) {
+      renameError = 'Folder name is required';
+      return;
+    }
+    if (name.includes('/') || name.includes('\\') || name === '.' || name === '..') {
+      renameError = 'Folder name must not contain "/" or "\\"';
+      return;
+    }
+    if (name === oldName) {
+      cancelRename();
+      return;
+    }
+
+    const confirmed = await confirm(
+      `Rename folder "${oldName}" to "${name}"?\n\n` +
+        `Posts and pages that reference images in this folder ` +
+        `(e.g. /${path}/...) will have broken links until you update them manually.`,
+      { title: 'Rename folder', kind: 'warning', okLabel: 'Rename' }
+    );
+    if (!confirmed) return;
+
+    renameBusy = true;
+    try {
+      await backend.renameStaticFolder(path, name);
+      if (selectedEntry?.path === path) {
+        selectedEntry = null;
+      }
+      cancelRename();
+      await loadEntries();
+    } catch (err) {
+      renameError = errorMessage(err, 'Failed to rename folder');
+    } finally {
+      renameBusy = false;
     }
   }
 
@@ -316,6 +401,42 @@
         </div>
       </div>
 
+      {#if renamingPath}
+        <form
+          class="folder-row"
+          onsubmit={(e) => {
+            e.preventDefault();
+            submitRename();
+          }}
+        >
+          <!-- svelte-ignore a11y_autofocus -->
+          <input
+            class="folder-input"
+            type="text"
+            placeholder="New folder name"
+            aria-label="Rename folder to"
+            bind:value={renameValue}
+            oninput={() => (renameError = '')}
+            onkeydown={(e) => {
+              if (e.key === 'Escape') {
+                e.preventDefault();
+                e.stopPropagation();
+                cancelRename();
+              }
+            }}
+            disabled={renameBusy}
+            autofocus
+          />
+          <button class="folder-create-btn" type="submit" disabled={renameBusy}>Rename</button>
+          <button class="folder-cancel-btn" type="button" onclick={cancelRename} disabled={renameBusy}>
+            Cancel
+          </button>
+          {#if renameError}
+            <p class="folder-error">{renameError}</p>
+          {/if}
+        </form>
+      {/if}
+
       {#if showNewFolder}
         <div class="folder-row">
           <input
@@ -378,7 +499,7 @@
             role="button"
             tabindex="0"
             onkeydown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
+              if (e.currentTarget === e.target && (e.key === 'Enter' || e.key === ' ')) {
                 e.preventDefault();
                 handleEntryDoubleClick(entry);
               }
@@ -391,6 +512,18 @@
             <div class="image-info">
               <p class="image-meta">Folder</p>
               <button
+                class="rename-btn"
+                onclick={(e) => {
+                  e.stopPropagation();
+                  startRename(entry);
+                }}
+                type="button"
+                aria-label="Rename folder"
+                title="Rename folder"
+              >
+                <Pencil size={14} />
+              </button>
+              <button
                 class="delete-btn"
                 onclick={(e) => {
                   e.stopPropagation();
@@ -398,6 +531,7 @@
                 }}
                 type="button"
                 aria-label="Delete folder"
+                title="Delete folder"
               >
                 <Trash2 size={14} />
               </button>
@@ -414,7 +548,7 @@
             role="button"
             tabindex="0"
             onkeydown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
+              if (e.currentTarget === e.target && (e.key === 'Enter' || e.key === ' ')) {
                 e.preventDefault();
                 handleEntryDoubleClick(entry);
               }
@@ -724,8 +858,20 @@
 
   .folder-row {
     display: flex;
+    flex-wrap: wrap;
     gap: 0.5rem;
     padding: 0 1.5rem 1rem;
+  }
+
+  .folder-error {
+    flex-basis: 100%;
+    margin: 0;
+    font-size: 0.8rem;
+    color: #dc2626;
+  }
+
+  :global(.dark .folder-error) {
+    color: #fca5a5;
   }
 
   .folder-input {
@@ -996,6 +1142,33 @@
 
   :global(.dark .delete-btn) {
     background-color: rgba(0, 0, 0, 0.8);
+  }
+
+  .rename-btn {
+    position: absolute;
+    top: 0.5rem;
+    right: 2.25rem;
+    padding: 0.25rem;
+    background-color: rgba(255, 255, 255, 0.9);
+    border: none;
+    border-radius: 0.25rem;
+    color: #374151;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+  }
+
+  .image-card:hover .rename-btn {
+    opacity: 1;
+  }
+
+  .rename-btn:hover {
+    background-color: #ffffff;
+  }
+
+  :global(.dark .rename-btn) {
+    background-color: rgba(0, 0, 0, 0.8);
+    color: #e5e7eb;
   }
 
   /* Empty Gallery */

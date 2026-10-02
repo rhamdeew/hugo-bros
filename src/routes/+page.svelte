@@ -7,6 +7,8 @@
 
   let appConfig = $state<AppConfig | null>(null);
   let loading = $state(true);
+  let lastProjectPath = $state<string | null>(backend.getProjectPath());
+  let lastProjectName = $derived(lastProjectPath?.split(/[\\/]/).filter(Boolean).pop() ?? '');
 
   onMount(async () => {
     try {
@@ -90,20 +92,23 @@
         </div>
       {/if}
 
-      <!-- Posts Page Card -->
-      <div class="bg-surface dark:bg-dark-surface rounded-lg p-6 shadow-sm">
-        <h2 class="text-2xl font-semibold text-text-primary dark:text-dark-text-primary mb-4">
-          Posts
-        </h2>
-
-        <a
-          href="/posts"
-          class="inline-flex items-center gap-2 px-6 py-3 bg-accent hover:bg-blue-600 text-white rounded-lg font-medium transition-colors"
-        >
-          Manage Posts
-        </a>
-      </div>
-
+      <!-- Continue Last Project Card -->
+      {#if lastProjectPath}
+        <div class="bg-surface dark:bg-dark-surface rounded-lg p-6 shadow-sm">
+          <h2 class="text-2xl font-semibold text-text-primary dark:text-dark-text-primary mb-4">
+            Posts
+          </h2>
+          <p class="text-sm text-text-secondary dark:text-dark-text-secondary mb-4 truncate">
+            {lastProjectPath}
+          </p>
+          <button
+            onclick={() => lastProjectPath && openRecentProject(lastProjectPath)}
+            class="inline-flex items-center gap-2 px-6 py-3 bg-accent hover:bg-blue-600 text-white rounded-lg font-medium transition-colors"
+          >
+            Continue with {lastProjectName}
+          </button>
+        </div>
+      {/if}
     </main>
   </div>
 </div>

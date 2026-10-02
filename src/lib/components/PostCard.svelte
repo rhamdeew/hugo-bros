@@ -158,7 +158,7 @@
     class="post-card clickable"
     onclick={() => onClick()}
     onkeydown={(e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
+      if (e.currentTarget === e.target && (e.key === 'Enter' || e.key === ' ')) {
         e.preventDefault();
         onClick();
       }

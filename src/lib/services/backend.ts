@@ -7,6 +7,7 @@ import type {
   ImageInfo,
   StaticEntry,
   HugoConfig,
+  Frontmatter,
   FrontmatterConfig,
   AppConfig,
   CommandOutput
@@ -67,6 +68,24 @@ export class BackendService {
   async generateFrontmatterConfig(): Promise<FrontmatterConfig> {
     const projectPath = this.ensureProject();
     return invoke<FrontmatterConfig>('generate_frontmatter_config_command', { projectPath });
+  }
+
+  async getFrontmatterConfigRaw(): Promise<string | null> {
+    const projectPath = this.ensureProject();
+    return invoke<string | null>('get_frontmatter_config_raw', { projectPath });
+  }
+
+  async saveFrontmatterConfigRaw(content: string): Promise<FrontmatterConfig> {
+    const projectPath = this.ensureProject();
+    return invoke<FrontmatterConfig>('save_frontmatter_config_raw', { projectPath, content });
+  }
+
+  async serializeFrontmatter(frontmatter: Frontmatter): Promise<string> {
+    return invoke<string>('serialize_frontmatter', { frontmatter });
+  }
+
+  async parseFrontmatter(raw: string): Promise<Frontmatter> {
+    return invoke<Frontmatter>('parse_frontmatter', { raw });
   }
 
   // ====================
@@ -175,9 +194,15 @@ export class BackendService {
     return invoke<string>('create_static_folder', { projectPath, parentDir, name });
   }
 
-  async deleteStaticEntry(relativePath: string): Promise<void> {
+  /** Rejects with `FOLDER_NOT_EMPTY` when deleting a non-empty folder without `recursive`. */
+  async deleteStaticEntry(relativePath: string, recursive = false): Promise<void> {
     const projectPath = this.ensureProject();
-    await invoke('delete_static_entry', { projectPath, relativePath });
+    await invoke('delete_static_entry', { projectPath, relativePath, recursive });
+  }
+
+  async renameStaticFolder(relativePath: string, newName: string): Promise<string> {
+    const projectPath = this.ensureProject();
+    return invoke<string>('rename_static_folder', { projectPath, relativePath, newName });
   }
 
   async copyImageToProject(sourcePath: string, targetDir?: string): Promise<string> {

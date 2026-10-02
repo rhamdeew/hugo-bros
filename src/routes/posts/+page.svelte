@@ -1,10 +1,10 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { Plus, FolderOpen, X, ArrowLeft } from 'lucide-svelte';
+  import { Plus, FolderOpen, X, ArrowLeft, FileCog } from 'lucide-svelte';
   import { goto } from '$app/navigation';
   import { confirm, message } from '@tauri-apps/plugin-dialog';
   import { backend } from '$lib/services/backend';
-  import { PostList, ImageGallery, HugoControls } from '$lib/components';
+  import { PostList, ImageGallery, HugoControls, FrontmatterConfigEditor } from '$lib/components';
   import type { Post, Page, Draft, StaticEntry, FrontmatterConfig } from '$lib/types';
 
   let posts: Post[] = $state([]);
@@ -15,6 +15,7 @@
   let loading = $state(true);
   let error = $state<string | null>(null);
   let showImageGallery = $state(false);
+  let showConfigEditor = $state(false);
   let showCreateDialog = $state(false);
   let newPostTitle = $state('');
   let createError = $state<string | null>(null);
@@ -254,6 +255,15 @@
           <ArrowLeft size={18} />
           <span>Back to Start Screen</span>
         </button>
+        <button
+          class="back-btn"
+          onclick={() => (showConfigEditor = true)}
+          type="button"
+          title="Edit .hugo-bros/frontmatter-config.json"
+        >
+          <FileCog size={18} />
+          <span>Frontmatter Config</span>
+        </button>
         <button class="create-btn" onclick={handleCreatePost} type="button">
           <Plus size={18} />
           <span>New Post</span>
@@ -366,6 +376,13 @@
   <ImageGallery
     bind:open={showImageGallery}
     onSelect={handleImageSelect}
+  />
+
+  <FrontmatterConfigEditor
+    bind:open={showConfigEditor}
+    onSaved={(config) => {
+      frontmatterConfig = config;
+    }}
   />
 
   <!-- New Post Modal -->

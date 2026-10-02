@@ -7,3 +7,4 @@ export { default as PostList } from './PostList.svelte';
 export { default as FrontmatterEditor } from './FrontmatterEditor.svelte';
 export { default as ImageGallery } from './ImageGallery.svelte';
 export { default as HugoControls } from './HugoControls.svelte';
+export { default as FrontmatterConfigEditor } from './FrontmatterConfigEditor.svelte';

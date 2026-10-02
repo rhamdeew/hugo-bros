@@ -16,6 +16,7 @@
     ListOrdered,
     Quote,
     Minus,
+    ScissorsLineDashed,
     Heading1,
     Heading2,
     Heading3,
@@ -29,7 +30,9 @@
     ChevronUp,
     Plus,
     X,
-    GripVertical
+    GripVertical,
+    Braces,
+    SlidersHorizontal
   } from 'lucide-svelte';
   import { convertFileSrc } from '@tauri-apps/api/core';
   import { getCurrentWebview } from '@tauri-apps/api/webview';
@@ -93,6 +96,12 @@
   // Frontmatter editing
   let newTagName = $state('');
   let newCategoryName = $state('');
+
+  // Raw frontmatter (YAML/TOML) editing
+  let frontmatterMode = $state<'fields' | 'raw'>('fields');
+  let rawFrontmatter = $state('');
+  let rawFrontmatterDirty = $state(false);
+  let rawFrontmatterError = $state<string | null>(null);
 
   // Helper to convert project-relative image URLs to Tauri asset URLs
   function getPreviewImageSrc(relativeUrl: string | undefined): string {
@@ -400,6 +409,12 @@
   async function savePost(isAutoSave = false) {
     if (!post) return;
 
+    if (frontmatterMode === 'raw' && !(await applyRawFrontmatter())) {
+      saveStatus = 'error';
+      saveMessage = 'Fix frontmatter before saving';
+      return;
+    }
+
     saveStatus = 'saving';
     saveMessage = 'Saving...';
 
@@ -559,6 +574,10 @@
         insertion = '\n---\n';
         cursorOffset = insertion.length;
         break;
+      case 'more':
+        insertion = '\n<!--more-->\n';
+        cursorOffset = insertion.length;
+        break;
     }
 
     const before = markdownContent.substring(0, start);
@@ -632,6 +651,52 @@
     pendingImageField = null;
   }
 
+  // Raw frontmatter functions
+  async function openRawFrontmatter() {
+    if (!post) return;
+    try {
+      post.frontmatter.title = post.title;
+      rawFrontmatter = await backend.serializeFrontmatter($state.snapshot(post.frontmatter));
+      rawFrontmatterDirty = false;
+      rawFrontmatterError = null;
+      frontmatterMode = 'raw';
+    } catch (error) {
+      console.error('Failed to serialize frontmatter:', error);
+      rawFrontmatterError = String(error);
+    }
+  }
+
+  // Parses the raw text into post.frontmatter; returns false if it is invalid
+  async function applyRawFrontmatter(): Promise<boolean> {
+    if (!post) return false;
+    if (!rawFrontmatterDirty) return true;
+    try {
+      const parsed = await backend.parseFrontmatter(rawFrontmatter);
+      parsed.customFields = parsed.customFields || {};
+      post.frontmatter = parsed;
+      post.title = parsed.title;
+      rawFrontmatterDirty = false;
+      rawFrontmatterError = null;
+      handleFrontmatterChange();
+      return true;
+    } catch (error) {
+      rawFrontmatterError = String(error);
+      return false;
+    }
+  }
+
+  async function showFieldsFrontmatter() {
+    if (await applyRawFrontmatter()) {
+      frontmatterMode = 'fields';
+    }
+  }
+
+  function handleRawFrontmatterInput() {
+    rawFrontmatterDirty = true;
+    rawFrontmatterError = null;
+    handleFrontmatterChange();
+  }
+
   // Frontmatter functions
   function handleFrontmatterChange() {
     hasUnsavedChanges = true;
@@ -671,6 +736,9 @@
         gfm: true,
       });
       let html = marked.parse(md) as string;
+
+      // Show Hugo's summary divider as a visible marker
+      html = html.replace(/<!--\s*more\s*-->/g, '<div class="more-marker"><span>more</span></div>');
 
       // Convert project-relative image URLs to Tauri asset URLs
       const projectPath = backend.getProjectPath();
@@ -782,6 +850,9 @@
           <button onclick={() => insertFormatting('hr')} class="toolbar-btn" title="Horizontal Rule" type="button">
             <Minus size={18} />
           </button>
+          <button onclick={() => insertFormatting('more')} class="toolbar-btn" title="Read More (<!--more-->)" type="button">
+            <ScissorsLineDashed size={18} />
+          </button>
         </div>
 
         <div class="toolbar-divider"></div>
@@ -865,11 +936,57 @@
         <aside class="frontmatter-sidebar">
           <div class="sidebar-header">
             <h2>Post Settings</h2>
-            <button onclick={() => (showFrontmatter = false)} class="close-btn" type="button">
-              <X size={18} />
-            </button>
+            <div class="sidebar-header-actions">
+              {#if frontmatterMode === 'raw'}
+                <button
+                  onclick={showFieldsFrontmatter}
+                  class="close-btn"
+                  type="button"
+                  title="Edit as fields"
+                  aria-label="Edit as fields"
+                >
+                  <SlidersHorizontal size={16} />
+                </button>
+              {:else}
+                <button
+                  onclick={openRawFrontmatter}
+                  class="close-btn"
+                  type="button"
+                  title="Edit raw frontmatter"
+                  aria-label="Edit raw frontmatter"
+                >
+                  <Braces size={16} />
+                </button>
+              {/if}
+              <button onclick={() => (showFrontmatter = false)} class="close-btn" type="button">
+                <X size={18} />
+              </button>
+            </div>
           </div>
 
+          {#if frontmatterMode === 'raw'}
+            <div class="sidebar-content raw-frontmatter">
+              <textarea
+                class="raw-frontmatter-input"
+                class:invalid={!!rawFrontmatterError}
+                bind:value={rawFrontmatter}
+                oninput={handleRawFrontmatterInput}
+                spellcheck="false"
+                aria-label="Raw frontmatter (YAML or TOML)"
+              ></textarea>
+              {#if rawFrontmatterError}
+                <p class="raw-frontmatter-error">{rawFrontmatterError}</p>
+              {/if}
+              <button
+                class="raw-frontmatter-apply"
+                type="button"
+                onclick={applyRawFrontmatter}
+                disabled={!rawFrontmatterDirty}
+              >
+                Apply
+              </button>
+            </div>
+          {:else}
           <div class="sidebar-content">
             <!-- Title -->
             <div class="field-group">
@@ -1034,7 +1151,7 @@
                       tabindex="0"
                       onclick={() => toggleCustomGroup(group.name)}
                       onkeydown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
+                        if (e.currentTarget === e.target && (e.key === 'Enter' || e.key === ' ')) {
                           e.preventDefault();
                           toggleCustomGroup(group.name);
                         }
@@ -1189,6 +1306,7 @@
               </div>
             {/if}
           </div>
+          {/if}
         </aside>
       {/if}
 
@@ -1596,6 +1714,78 @@
 
   :global(.dark .close-btn:hover) {
     background-color: #404040;
+  }
+
+  .sidebar-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  .raw-frontmatter {
+    gap: 0.5rem;
+  }
+
+  .raw-frontmatter-input {
+    flex: 1;
+    min-height: 16rem;
+    padding: 0.5rem 0.75rem;
+    background-color: #f7f7f7;
+    border: 1px solid #e5e5e5;
+    border-radius: 0.375rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    color: #1a1a1a;
+    resize: none;
+    white-space: pre;
+    tab-size: 2;
+  }
+
+  .raw-frontmatter-input:focus {
+    outline: none;
+    border-color: #3b82f6;
+  }
+
+  .raw-frontmatter-input.invalid {
+    border-color: #dc2626;
+  }
+
+  :global(.dark .raw-frontmatter-input) {
+    background-color: #404040;
+    border-color: #525252;
+    color: #f5f5f5;
+  }
+
+  .raw-frontmatter-error {
+    margin: 0;
+    font-size: 0.75rem;
+    color: #dc2626;
+    white-space: pre-wrap;
+  }
+
+  :global(.dark .raw-frontmatter-error) {
+    color: #fca5a5;
+  }
+
+  .raw-frontmatter-apply {
+    padding: 0.5rem 0.75rem;
+    background-color: #3b82f6;
+    color: white;
+    border: none;
+    border-radius: 0.375rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+  }
+
+  .raw-frontmatter-apply:hover:not(:disabled) {
+    background-color: #2563eb;
+  }
+
+  .raw-frontmatter-apply:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   .sidebar-content {
@@ -2116,5 +2306,28 @@
 
   :global(.dark .markdown-preview hr) {
     border-top-color: #404040;
+  }
+
+  .markdown-preview :global(.more-marker) {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin: 2rem 0;
+    color: #a3a3a3;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+
+  .markdown-preview :global(.more-marker)::before,
+  .markdown-preview :global(.more-marker)::after {
+    content: '';
+    flex: 1;
+    border-top: 2px dashed #d4d4d4;
+  }
+
+  :global(.dark .markdown-preview .more-marker)::before,
+  :global(.dark .markdown-preview .more-marker)::after {
+    border-top-color: #525252;
   }
 </style>

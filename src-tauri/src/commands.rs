@@ -1,7 +1,9 @@
 // Tauri commands for frontend-backend communication
 
 use crate::hugo::HugoProject;
-use crate::markdown::{Draft, ImageInfo, Page, Post};
+use crate::markdown::{
+    frontmatter_to_yaml, parse_raw_frontmatter, Draft, Frontmatter, ImageInfo, Page, Post,
+};
 use crate::frontmatter_config::{
     generate_frontmatter_config, load_frontmatter_config, FrontmatterConfig,
 };
@@ -120,6 +122,57 @@ pub fn generate_frontmatter_config_command(project_path: String) -> Result<Front
         .map_err(|e| format!("Failed to write frontmatter config: {}", e))?;
 
     Ok(config)
+}
+
+fn frontmatter_config_path(project_path: &str) -> PathBuf {
+    Path::new(project_path)
+        .join(".hugo-bros")
+        .join("frontmatter-config.json")
+}
+
+// Returns the raw JSON of frontmatter-config.json, or None if it does not exist
+#[command]
+pub fn get_frontmatter_config_raw(project_path: String) -> Result<Option<String>, String> {
+    let config_path = frontmatter_config_path(&project_path);
+    if !config_path.exists() {
+        return Ok(None);
+    }
+    fs::read_to_string(&config_path)
+        .map(Some)
+        .map_err(|e| format!("Failed to read frontmatter config: {}", e))
+}
+
+// Validates raw JSON against the config schema, then writes it as-is
+#[command]
+pub fn save_frontmatter_config_raw(
+    project_path: String,
+    content: String,
+) -> Result<FrontmatterConfig, String> {
+    let mut config: FrontmatterConfig = serde_json::from_str(&content)
+        .map_err(|e| format!("Invalid frontmatter config: {}", e))?;
+    config.is_default = false;
+
+    let config_path = frontmatter_config_path(&project_path);
+    if let Some(parent) = config_path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create .hugo-bros directory: {}", e))?;
+    }
+    fs::write(&config_path, content)
+        .map_err(|e| format!("Failed to write frontmatter config: {}", e))?;
+
+    Ok(config)
+}
+
+// Serializes post frontmatter to the YAML written into the file
+#[command]
+pub fn serialize_frontmatter(frontmatter: Frontmatter) -> Result<String, String> {
+    frontmatter_to_yaml(&frontmatter)
+}
+
+// Parses raw frontmatter (YAML or TOML) edited by the user
+#[command]
+pub fn parse_frontmatter(raw: String) -> Result<Frontmatter, String> {
+    parse_raw_frontmatter(&raw)
 }
 
 // ====================
@@ -732,23 +785,45 @@ pub fn create_static_folder(
     Ok(relative_path.replace('\\', "/"))
 }
 
-#[command]
-pub fn delete_static_entry(project_path: String, relative_path: String) -> Result<(), String> {
-    let project = HugoProject::new(PathBuf::from(&project_path));
-    let static_dir = project.get_static_dir();
-    if relative_path.trim().is_empty() {
-        return Err("Refusing to delete static root".to_string());
-    }
+/// Resolves an existing entry under the static dir, refusing the static root
+/// itself (including spellings like "." that `validate_relative_path` allows).
+fn resolve_static_entry(static_dir: &Path, relative_path: &str) -> Result<PathBuf, String> {
     if !static_dir.exists() {
         return Err("Entry not found".to_string());
     }
-    let target_path = resolve_relative_path(&static_dir, &relative_path)?;
-
+    let target_path = resolve_relative_path(static_dir, relative_path)?;
     if !target_path.exists() {
         return Err("Entry not found".to_string());
     }
+    if canonicalize_lossy(&target_path)? == canonicalize_lossy(static_dir)? {
+        return Err("Refusing to modify static root".to_string());
+    }
+    Ok(target_path)
+}
+
+/// Deletes a file or folder under the static dir. A non-empty folder is only
+/// removed with `recursive`; otherwise this fails with `FOLDER_NOT_EMPTY` so
+/// the UI can ask for confirmation first.
+#[command]
+pub fn delete_static_entry(
+    project_path: String,
+    relative_path: String,
+    recursive: Option<bool>,
+) -> Result<(), String> {
+    let project = HugoProject::new(PathBuf::from(&project_path));
+    let static_dir = project.get_static_dir();
+    let target_path = resolve_static_entry(&static_dir, &relative_path)?;
 
     if target_path.is_dir() {
+        if !recursive.unwrap_or(false) {
+            let is_empty = fs::read_dir(&target_path)
+                .map_err(|e| format!("Failed to read folder: {}", e))?
+                .next()
+                .is_none();
+            if !is_empty {
+                return Err("FOLDER_NOT_EMPTY".to_string());
+            }
+        }
         fs::remove_dir_all(&target_path)
             .map_err(|e| format!("Failed to delete folder: {}", e))?;
     } else {
@@ -757,6 +832,42 @@ pub fn delete_static_entry(project_path: String, relative_path: String) -> Resul
     }
 
     Ok(())
+}
+
+/// Renames a folder under the static dir in place; returns its new relative path.
+#[command]
+pub fn rename_static_folder(
+    project_path: String,
+    relative_path: String,
+    new_name: String,
+) -> Result<String, String> {
+    let project = HugoProject::new(PathBuf::from(&project_path));
+    let static_dir = project.get_static_dir();
+    let new_name = new_name.trim();
+    validate_folder_name(new_name)?;
+
+    let source = resolve_static_entry(&static_dir, &relative_path)?;
+    if !source.is_dir() {
+        return Err("Folder not found".to_string());
+    }
+
+    let target = source
+        .parent()
+        .ok_or("Invalid folder path")?
+        .join(new_name);
+    ensure_within(&static_dir, &target)?;
+    if target.exists() {
+        return Err(format!("Folder \"{}\" already exists", new_name));
+    }
+
+    fs::rename(&source, &target).map_err(|e| format!("Failed to rename folder: {}", e))?;
+
+    target
+        .strip_prefix(&static_dir)
+        .ok()
+        .and_then(|p| p.to_str())
+        .map(|s| s.replace('\\', "/"))
+        .ok_or_else(|| "Failed to compute the renamed folder's relative path".to_string())
 }
 
 #[command]
@@ -1302,4 +1413,97 @@ fn extract_string(value: &serde_json::Value, keys: &[&str]) -> Option<String> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_project(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("hugo-bros-{}-{}", name, std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn test_frontmatter_config_raw_roundtrip() {
+        let dir = temp_project("fm-config-raw");
+        let project_path = dir.to_string_lossy().to_string();
+
+        assert_eq!(get_frontmatter_config_raw(project_path.clone()).unwrap(), None);
+
+        let raw = r#"{
+  "version": "1.0",
+  "previewImageField": "cover",
+  "customFields": [{ "name": "cover", "label": "Cover", "type": "image" }]
+}"#;
+        let config = save_frontmatter_config_raw(project_path.clone(), raw.into()).unwrap();
+        assert!(!config.is_default);
+        assert_eq!(config.custom_fields.len(), 1);
+        assert_eq!(
+            get_frontmatter_config_raw(project_path.clone()).unwrap().as_deref(),
+            Some(raw)
+        );
+
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn test_save_frontmatter_config_raw_rejects_invalid() {
+        let dir = temp_project("fm-config-invalid");
+        let project_path = dir.to_string_lossy().to_string();
+
+        assert!(save_frontmatter_config_raw(project_path.clone(), "{ not json".into()).is_err());
+        // Valid JSON but missing required "version"
+        assert!(save_frontmatter_config_raw(project_path.clone(), "{}".into()).is_err());
+        assert_eq!(get_frontmatter_config_raw(project_path).unwrap(), None);
+
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn test_static_folder_rename_and_delete() {
+        let dir = temp_project("static-folders");
+        let project_path = dir.to_string_lossy().to_string();
+        fs::create_dir_all(dir.join("static/trips/2024")).unwrap();
+        fs::write(dir.join("static/trips/2024/a.png"), b"x").unwrap();
+
+        let renamed =
+            rename_static_folder(project_path.clone(), "trips/2024".into(), "2025".into()).unwrap();
+        assert_eq!(renamed, "trips/2025");
+        assert!(dir.join("static/trips/2025/a.png").is_file());
+
+        fs::create_dir_all(dir.join("static/trips/other")).unwrap();
+        let err = rename_static_folder(project_path.clone(), "trips/other".into(), "2025".into())
+            .unwrap_err();
+        assert!(err.contains("already exists"), "{}", err);
+
+        // Non-empty folder requires recursive delete
+        let err = delete_static_entry(project_path.clone(), "trips".into(), None).unwrap_err();
+        assert_eq!(err, "FOLDER_NOT_EMPTY");
+        delete_static_entry(project_path.clone(), "trips/other".into(), Some(false)).unwrap();
+        delete_static_entry(project_path.clone(), "trips".into(), Some(true)).unwrap();
+        assert!(!dir.join("static/trips").exists());
+
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn test_static_folder_paths_cannot_escape_or_hit_root() {
+        let dir = temp_project("static-escape");
+        let project_path = dir.to_string_lossy().to_string();
+        fs::create_dir_all(dir.join("static/a")).unwrap();
+
+        for root in ["", ".", "./", "a/.."] {
+            assert!(delete_static_entry(project_path.clone(), root.into(), Some(true)).is_err());
+            assert!(rename_static_folder(project_path.clone(), root.into(), "x".into()).is_err());
+        }
+        assert!(delete_static_entry(project_path.clone(), "../static".into(), Some(true)).is_err());
+        assert!(rename_static_folder(project_path.clone(), "a".into(), "..".into()).is_err());
+        assert!(rename_static_folder(project_path.clone(), "a".into(), "b/c".into()).is_err());
+        assert!(dir.join("static/a").is_dir());
+
+        fs::remove_dir_all(dir).unwrap();
+    }
 }

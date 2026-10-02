@@ -93,6 +93,70 @@ pub fn frontmatter_to_yaml(frontmatter: &Frontmatter) -> Result<String, String> 
         .map_err(|e| format!("Failed to serialize frontmatter: {}", e))
 }
 
+// Parses frontmatter edited as raw text. Accepts YAML or TOML, with or without
+// the surrounding `---` / `+++` delimiters.
+pub fn parse_raw_frontmatter(raw: &str) -> Result<Frontmatter, String> {
+    let trimmed = raw.trim();
+    if let Some(inner) = strip_delimiters(trimmed, "+++") {
+        return frontmatter_from_toml(inner);
+    }
+    let inner = strip_delimiters(trimmed, "---").unwrap_or(trimmed);
+
+    match serde_yaml::from_str::<FrontmatterYaml>(inner) {
+        Ok(frontmatter) => Ok(frontmatter.into()),
+        Err(yaml_err) => {
+            let toml_result = frontmatter_from_toml(inner);
+            if toml_result.is_ok() || looks_like_toml(inner) {
+                toml_result
+            } else {
+                Err(format!("Invalid frontmatter YAML: {}", yaml_err))
+            }
+        }
+    }
+}
+
+fn strip_delimiters<'a>(text: &'a str, delimiter: &str) -> Option<&'a str> {
+    text.strip_prefix(delimiter)?.strip_suffix(delimiter)
+}
+
+// First meaningful line is `key = value` or a `[table]` header
+fn looks_like_toml(text: &str) -> bool {
+    text.lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty() && !line.starts_with('#'))
+        .map(|line| {
+            line.starts_with('[')
+                || line.find('=').is_some_and(|eq| line.find(':').is_none_or(|colon| eq < colon))
+        })
+        .unwrap_or(false)
+}
+
+fn frontmatter_from_toml(text: &str) -> Result<Frontmatter, String> {
+    let value = toml::from_str::<toml::Value>(text)
+        .map_err(|e| format!("Invalid frontmatter TOML: {}", e))?;
+    serde_json::from_value::<FrontmatterYaml>(toml_to_json(value))
+        .map(Frontmatter::from)
+        .map_err(|e| format!("Invalid frontmatter: {}", e))
+}
+
+// serde_json::to_value would turn TOML datetimes into an internal wrapper
+// object, so convert by hand and keep datetimes as their string form.
+fn toml_to_json(value: toml::Value) -> serde_json::Value {
+    match value {
+        toml::Value::String(s) => serde_json::Value::String(s),
+        toml::Value::Integer(i) => serde_json::Value::from(i),
+        toml::Value::Float(f) => serde_json::Value::from(f),
+        toml::Value::Boolean(b) => serde_json::Value::Bool(b),
+        toml::Value::Datetime(dt) => serde_json::Value::String(dt.to_string()),
+        toml::Value::Array(items) => {
+            serde_json::Value::Array(items.into_iter().map(toml_to_json).collect())
+        }
+        toml::Value::Table(table) => serde_json::Value::Object(
+            table.into_iter().map(|(k, v)| (k, toml_to_json(v))).collect(),
+        ),
+    }
+}
+
 #[derive(Debug)]
 pub struct MarkdownDocument {
     pub frontmatter: Frontmatter,
@@ -118,13 +182,9 @@ impl MarkdownDocument {
             let parts: Vec<&str> = raw.splitn(3, "+++").collect();
             if parts.len() >= 3 {
                 let frontmatter_str = parts[1].trim();
-                if let Ok(toml_value) = toml::from_str::<toml::Value>(frontmatter_str) {
-                    if let Ok(json_value) = serde_json::to_value(toml_value) {
-                        if let Ok(frontmatter) = serde_json::from_value::<FrontmatterYaml>(json_value) {
-                            let content = parts[2].trim().to_string();
-                            return Ok((Self { frontmatter: frontmatter.into(), content }, false));
-                        }
-                    }
+                if let Ok(frontmatter) = frontmatter_from_toml(frontmatter_str) {
+                    let content = parts[2].trim().to_string();
+                    return Ok((Self { frontmatter, content }, false));
                 }
             }
         }
@@ -366,6 +426,54 @@ impl Post {
 #[cfg(test)]
 mod tests {
     use super::MarkdownDocument;
+
+    #[test]
+    fn raw_frontmatter_yaml_roundtrip() {
+        let yaml = "title: Hello\ndate: 2024-01-01 10:00:00\ntags:\n- a\ndraft: true\ncover: /images/x.png\n";
+        let frontmatter = super::parse_raw_frontmatter(yaml).expect("parse failed");
+        assert_eq!(frontmatter.title, "Hello");
+        assert_eq!(frontmatter.tags, vec!["a"]);
+        assert_eq!(frontmatter.draft, Some(true));
+        assert!(frontmatter.custom_fields.contains_key("cover"));
+
+        let serialized = super::frontmatter_to_yaml(&frontmatter).expect("serialize failed");
+        let reparsed = super::parse_raw_frontmatter(&serialized).expect("reparse failed");
+        assert_eq!(reparsed.date, "2024-01-01 10:00:00");
+
+        let delimited = super::parse_raw_frontmatter(&format!("---\n{}---\n", serialized))
+            .expect("delimited parse failed");
+        assert_eq!(delimited.title, "Hello");
+
+        let err = super::parse_raw_frontmatter("tags: [").unwrap_err();
+        assert!(err.contains("YAML"), "{}", err);
+    }
+
+    #[test]
+    fn raw_frontmatter_toml() {
+        let toml = "title = 'Hello'\ndate = 2024-01-01T10:00:00+02:00\ntags = ['a']\n";
+        let frontmatter = super::parse_raw_frontmatter(toml).expect("parse failed");
+        assert_eq!(frontmatter.title, "Hello");
+        assert_eq!(frontmatter.date, "2024-01-01T10:00:00+02:00");
+        assert_eq!(frontmatter.tags, vec!["a"]);
+
+        let delimited = super::parse_raw_frontmatter(&format!("+++\n{}+++", toml))
+            .expect("delimited parse failed");
+        assert_eq!(delimited.title, "Hello");
+
+        let err = super::parse_raw_frontmatter("title = ").unwrap_err();
+        assert!(err.contains("TOML"), "{}", err);
+    }
+
+    #[test]
+    fn parse_toml_frontmatter_with_unquoted_date() {
+        let raw = "+++\ntitle = \"Hello\"\ndate = 2024-01-01T10:00:00Z\n+++\nBody";
+        let (doc, had_no_frontmatter) = MarkdownDocument::parse(raw).expect("parse failed");
+
+        assert!(!had_no_frontmatter);
+        assert_eq!(doc.frontmatter.title, "Hello");
+        assert_eq!(doc.frontmatter.date, "2024-01-01T10:00:00Z");
+        assert_eq!(doc.content, "Body");
+    }
 
     #[test]
     fn parse_standard_frontmatter() {

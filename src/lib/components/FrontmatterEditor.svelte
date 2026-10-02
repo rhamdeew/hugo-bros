@@ -62,7 +62,7 @@
     tabindex="0"
     onclick={() => (isOpen = !isOpen)}
     onkeydown={(e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
+      if (e.currentTarget === e.target && (e.key === 'Enter' || e.key === ' ')) {
         e.preventDefault();
         isOpen = !isOpen;
       }
